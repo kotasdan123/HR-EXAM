@@ -51,9 +51,6 @@
         <label for="student-name">Full Name</label>
         <input type="text" id="student-name" placeholder="e.g. Jane Doe" required />
 
-        <label for="student-id">Student ID</label>
-        <input type="text" id="student-id" placeholder="e.g. STU-2026-89" required />
-
         <div class="rules-box">
           <h3>Exam Rules & Conditions</h3>
           <ul>
@@ -80,10 +77,6 @@
         <span id="display-name" class="value">—</span>
       </div>
       <div class="header-block">
-        <span class="label">Student ID</span>
-        <span id="display-id" class="value">—</span>
-      </div>
-      <div class="header-block">
         <span class="label">Time Remaining</span>
         <span id="timer" class="value timer">60:00</span>
       </div>
@@ -93,16 +86,17 @@
       </div>
     </header>
 
-   <main id="form-container">
-    <iframe
-      id="exam-iframe"
-      src="https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?embedded=true"
-      title="Exam Form">
-      Loading exam…
-    </iframe>
-  </main>
+    <main id="form-container">
+      <iframe
+        id="exam-iframe"
+        src="https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?embedded=true"
+        title="Exam Form">
+        Loading exam…
+      </iframe>
+    </main>
+  </div>
 
-  <!-- VIOLATION OVERLAY (Active during exam only) -->
+  <!-- VIOLATION OVERLAY (Strictly Hidden by Default) -->
   <div id="violation-overlay" class="overlay" hidden>
     <div class="card overlay-card">
       <div class="icon-warning">&#9888;</div>
@@ -124,8 +118,7 @@
       <h1>Exam Terminated</h1>
       <p class="subtitle">Maximum violation limit reached during the active exam session.</p>
       <div class="dq-details">
-        <p><strong>Student:</strong> <span id="dq-name">—</span></p>
-        <p><strong>Student ID:</strong> <span id="dq-id">—</span></p>
+        <p><strong>Student Name:</strong> <span id="dq-name">—</span></p>
         <p><strong>Total Violations:</strong> <span id="dq-count">3</span></p>
         <p><strong>Time of Termination:</strong> <span id="dq-time">—</span></p>
       </div>
@@ -145,22 +138,22 @@
         </div>
         <div class="dash-tabs">
           <button id="tab-overview-btn" class="tab-btn active">Overview &amp; Analytics</button>
-          <button id="tab-users-btn" class="tab-btn" hidden>User Management (Superadmin)</button>
+          <button id="tab-users-btn" class="tab-btn" hidden>User Settings (Superadmin)</button>
         </div>
       </div>
 
-      <!-- ANALYTICAL STATS CARDS -->
+      <!-- ANALYTICAL DATA STATS CARDS -->
       <div class="stats-grid">
         <div class="stat-card">
           <span class="stat-title">Total Submissions</span>
           <span id="stat-total" class="stat-value">0</span>
         </div>
         <div class="stat-card">
-          <span class="stat-title">Average Score</span>
-          <span id="stat-avg-score" class="stat-value">0%</span>
+          <span class="stat-title">Passing Rate</span>
+          <span id="stat-pass-rate" class="stat-value text-success">0%</span>
         </div>
         <div class="stat-card">
-          <span class="stat-title">Total Violations</span>
+          <span class="stat-title">Total Violations Logged</span>
           <span id="stat-violations" class="stat-value text-warning">0</span>
         </div>
         <div class="stat-card">
@@ -169,19 +162,18 @@
         </div>
       </div>
 
-      <!-- TAB 1: SUBMISSIONS & MONITORING TABLE -->
+      <!-- TAB 1: SUBMISSIONS & MONITORING TABLE (Name Only) -->
       <section id="tab-overview" class="dash-section active">
-        <h3>Live Submissions &amp; Activity Log</h3>
+        <h3>Live Exam Submissions</h3>
         <div class="table-wrapper">
           <table>
             <thead>
               <tr>
-                <th>Student ID</th>
-                <th>Name</th>
+                <th>Student Name</th>
                 <th>Status</th>
                 <th>Score</th>
-                <th>Violations</th>
-                <th>Submitted At</th>
+                <th>Violations Committed</th>
+                <th>Submitted / Terminated At</th>
               </tr>
             </thead>
             <tbody id="submissions-table-body">
@@ -196,7 +188,7 @@
         <h3>Add &amp; Manage System Users</h3>
         <div class="user-management-grid">
           <form id="add-user-form" class="card">
-            <h4>Add New Staff User</h4>
+            <h4>Add New Staff Account</h4>
             <label for="new-username">Username</label>
             <input type="text" id="new-username" required />
 
