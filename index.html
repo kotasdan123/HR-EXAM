@@ -9,10 +9,93 @@
 <body>
 
   <!-- ============================================================
+       SCREEN 0: HOME / LANDING SCREEN
+       Entry point. "Login" (top-right) goes to Admin/Examiner login.
+       "Get Started" goes to the student registration screen.
+  ============================================================= -->
+  <div id="home-screen" class="screen active">
+    <button id="admin-login-link" class="text-link top-right">Login</button>
+    <div class="start-card home-card">
+      <h1>Secure Exam Environment</h1>
+      <p class="subtitle">Self-hosted proctoring for online assessments.</p>
+      <button id="get-started-btn" class="primary-btn">Get Started</button>
+      <p class="footer-note">Taking an exam? Click "Get Started" above.<br />Administrator or examiner? Use the Login link in the top right.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN: ADMIN / EXAMINER LOGIN
+  ============================================================= -->
+  <div id="admin-login-screen" class="screen">
+    <div class="start-card">
+      <button id="admin-back-btn" class="text-link">&larr; Back</button>
+      <h1>Admin / Examiner Login</h1>
+      <p class="subtitle">Sign in to configure the exam and review violation logs.</p>
+
+      <form id="admin-login-form" autocomplete="off">
+        <label for="admin-username">Username</label>
+        <input type="text" id="admin-username" placeholder="Username" required />
+
+        <label for="admin-password">Password</label>
+        <input type="password" id="admin-password" placeholder="Password" required />
+
+        <button type="submit" class="primary-btn">Sign In</button>
+        <p id="admin-login-error" class="error-text" hidden></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN: ADMIN / EXAMINER DASHBOARD
+  ============================================================= -->
+  <div id="admin-dashboard-screen" class="screen">
+    <div class="start-card admin-card">
+      <div class="admin-header-row">
+        <h1>Admin Dashboard</h1>
+        <button id="admin-logout-btn" class="text-link">Logout</button>
+      </div>
+
+      <h3>Exam Settings</h3>
+      <form id="admin-settings-form" autocomplete="off">
+        <label for="setting-duration">Exam Duration (minutes)</label>
+        <input type="number" id="setting-duration" min="1" required />
+
+        <label for="setting-max-violations">Max Violations Allowed</label>
+        <input type="number" id="setting-max-violations" min="1" required />
+
+        <label for="setting-form-url">Google Form Embed URL</label>
+        <input type="text" id="setting-form-url" placeholder="https://docs.google.com/forms/d/e/.../viewform?embedded=true" required />
+
+        <button type="submit" class="primary-btn">Save Settings</button>
+        <p id="admin-settings-saved" class="success-text" hidden>Settings saved for the next exam session.</p>
+      </form>
+
+      <h3>Violation Log</h3>
+      <div id="violation-log-wrapper">
+        <table id="violation-log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Student</th>
+              <th>ID</th>
+              <th>#</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="violation-log-body">
+            <tr><td colspan="5" class="empty-log">No violations logged yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        SCREEN 1: START / REGISTRATION SCREEN
        Collects student identity before the exam is unlocked.
   ============================================================= -->
-  <div id="start-screen" class="screen active">
+  <div id="start-screen" class="screen">
+    <button id="student-back-btn" class="text-link">&larr; Back</button>
     <div class="start-card">
       <h1>Secure Exam Environment</h1>
       <p class="subtitle">Please read the instructions carefully before beginning.</p>
