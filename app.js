@@ -20,7 +20,7 @@
     studentName: '',
     studentId: '',
     violationCount: 0,
-    examActive: false,
+    examActive: false, // Set to true ONLY during an ongoing exam
     disqualified: false,
     timerInterval: null,
     secondsRemaining: CONFIG.EXAM_DURATION_SECONDS,
@@ -86,18 +86,31 @@
 
   if (el.iframe) el.iframe.src = CONFIG.GOOGLE_FORM_URL;
 
-  // Screen Navigation
+  // Screen Navigation Helpers
   function showScreen(screenEl) {
+    // When leaving the exam screen, make sure active exam state is set to false
+    if (screenEl !== el.examScreen) {
+      state.examActive = false;
+    }
+
     [el.loginScreen, el.startScreen, el.examScreen, el.disqualifiedScreen, el.dashboardScreen].forEach(s => {
       if (s) s.classList.remove('active');
     });
     if (screenEl) screenEl.classList.add('active');
   }
 
+  // Check if student is currently taking an exam
+  function isExamCurrentlyActive() {
+    return state.examActive && 
+           !state.disqualified && 
+           el.examScreen && 
+           el.examScreen.classList.contains('active');
+  }
+
   if (el.navLoginBtn) el.navLoginBtn.addEventListener('click', () => showScreen(el.loginScreen));
   if (el.loginBackBtn) el.loginBackBtn.addEventListener('click', () => showScreen(el.startScreen));
 
-  // Authentication
+  // Authentication Controls
   if (el.loginForm) {
     el.loginForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -129,7 +142,7 @@
     });
   }
 
-  // Exam Initialization
+  // Exam Start
   if (el.startForm) {
     el.startForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -139,7 +152,7 @@
       try {
         await enterFullscreen(document.documentElement);
       } catch (err) {
-        console.warn('Fullscreen prevented or unsupported on initial start.');
+        console.warn('Fullscreen request blocked during launch.');
       }
       beginExam();
     });
@@ -155,11 +168,12 @@
     updateViolationDisplay();
 
     showScreen(el.examScreen);
+    state.examActive = true; // Confirmed active exam state
     document.body.classList.add('lockdown-active');
     startTimer();
   }
 
-  // Helper: Cross-browser Fullscreen
+  // Cross-browser Fullscreen Helpers
   function enterFullscreen(elem) {
     const req = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.msRequestFullscreen || elem.mozRequestFullScreen;
     if (req) {
@@ -172,28 +186,33 @@
     return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || document.mozFullScreenElement);
   }
 
-  // Monitoring Listeners
+  // =========================================================================
+  // STRICT EXAM-ONLY MONITORING LISTENERS
+  // =========================================================================
   document.addEventListener('fullscreenchange', () => {
-    if (state.examActive && !state.disqualified && !isFullscreen()) {
+    if (isExamCurrentlyActive() && !isFullscreen()) {
       registerViolation('Exited full-screen mode.');
     }
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (state.examActive && !state.disqualified && document.hidden) {
+    if (isExamCurrentlyActive() && document.hidden) {
       registerViolation('Tab switched or application minimized.');
     }
   });
 
   window.addEventListener('blur', () => {
-    if (state.examActive && !state.disqualified) {
+    if (isExamCurrentlyActive()) {
       registerViolation('Exam window lost focus.');
     }
   });
 
   function registerViolation(reason) {
+    // Secondary check: Never log violations unless actively on the exam screen
+    if (!isExamCurrentlyActive()) return;
+
     const now = Date.now();
-    if (now - state.lastViolationTimestamp < 800) return; // Debounce duplicate events
+    if (now - state.lastViolationTimestamp < 800) return; // Debounce triggers
     state.lastViolationTimestamp = now;
 
     state.violationCount++;
@@ -215,14 +234,12 @@
       (state.violationCount === 2 ? 'warning' : state.violationCount >= 3 ? 'critical' : '');
   }
 
-  // FIX: Resume Button Event Handler
+  // Resume Action Button Handler
   if (el.resumeBtn) {
     el.resumeBtn.addEventListener('click', async () => {
-      // 1. Force overlay removal immediately
       if (el.overlay) el.overlay.hidden = true;
 
-      // 2. Safely attempt to re-establish fullscreen
-      if (state.examActive && !state.disqualified && !isFullscreen()) {
+      if (isExamCurrentlyActive() && !isFullscreen()) {
         try {
           await enterFullscreen(document.documentElement);
         } catch (err) {
@@ -238,7 +255,7 @@
     if (state.timerInterval) clearInterval(state.timerInterval);
 
     state.timerInterval = setInterval(() => {
-      if (!state.examActive) return;
+      if (!isExamCurrentlyActive()) return;
       state.secondsRemaining--;
       
       const m = String(Math.floor(state.secondsRemaining / 60)).padStart(2, '0');
@@ -279,7 +296,7 @@
     });
   }
 
-  // Dashboard & Management Functions
+  // Dashboard Setup
   function setupDashboard() {
     if (el.userDisplayRole) el.userDisplayRole.textContent = `${state.currentUser.username} (${state.currentUser.role})`;
     
