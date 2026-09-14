@@ -1,10 +1,11 @@
 (() => {
   'use strict';
 
-  const CONFIG = {
-    MAX_VIOLATIONS: 3,
+ const CONFIG = {
+    MAX_VIOLATIONS: 5,
     EXAM_DURATION_SECONDS: 60 * 60,
-    GOOGLE_FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?usp=header'
+    // Updated with your specific Google Form URL (embedded mode enabled)
+    GOOGLE_FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?embedded=true'
   };
 
   // State Management
