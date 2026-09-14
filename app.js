@@ -28,6 +28,25 @@
     MAX_VIOLATIONS: 3,
     EXAM_DURATION_SECONDS: 60 * 60, // 60 minutes — adjust as needed
     GOOGLE_FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?usp=header',
+    // Milliseconds to ignore blur/visibility/fullscreen events right after
+    // the exam starts (or right after re-entering fullscreen from the
+    // resume button). This exists because *entering fullscreen itself*
+    // can fire a spurious `blur` event on some browsers/OSes during the
+    // windowed->fullscreen transition — without this grace window that
+    // transition was being counted as a violation before the student
+    // ever saw the exam.
+    GRACE_PERIOD_MS: 1200,
+  };
+
+  // -------------------------------------------------------------------
+  // ADMIN / EXAMINER AUTH (placeholder — client-side only)
+  // In production, replace this with a real authentication call to your
+  // backend. Hardcoded credentials in shipped JS are NOT secure; this is
+  // here purely so the login flow is demonstrable out of the box.
+  // -------------------------------------------------------------------
+  const ADMIN_CREDENTIALS = {
+    username: 'admin',
+    password: 'ChangeMe123!',
   };
 
   // -------------------------------------------------------------------
@@ -38,6 +57,7 @@
     studentId: '',
     violationCount: 0,
     examActive: false,       // true once the student has started the exam
+    timerRunning: false,     // true only while the countdown is actively ticking
     disqualified: false,
     timerInterval: null,
     secondsRemaining: CONFIG.EXAM_DURATION_SECONDS,
@@ -46,15 +66,44 @@
     overlayOpen: false,
     lastViolationTimestamp: 0,
     VIOLATION_DEBOUNCE_MS: 500,
+    // Timestamp (ms) until which blur/visibility/fullscreen events are
+    // ignored — see CONFIG.GRACE_PERIOD_MS above.
+    graceUntil: 0,
+    // In-memory log of every violation across all sessions, shown on the
+    // admin dashboard. In production this should come from your backend.
+    violationLog: [],
+    adminLoggedIn: false,
   };
 
   // -------------------------------------------------------------------
   // DOM REFERENCES
   // -------------------------------------------------------------------
   const el = {
+    homeScreen: document.getElementById('home-screen'),
+    adminLoginScreen: document.getElementById('admin-login-screen'),
+    adminDashboardScreen: document.getElementById('admin-dashboard-screen'),
     startScreen: document.getElementById('start-screen'),
     examScreen: document.getElementById('exam-screen'),
     disqualifiedScreen: document.getElementById('disqualified-screen'),
+
+    getStartedBtn: document.getElementById('get-started-btn'),
+    adminLoginLink: document.getElementById('admin-login-link'),
+    adminBackBtn: document.getElementById('admin-back-btn'),
+    studentBackBtn: document.getElementById('student-back-btn'),
+
+    adminLoginForm: document.getElementById('admin-login-form'),
+    adminUsername: document.getElementById('admin-username'),
+    adminPassword: document.getElementById('admin-password'),
+    adminLoginError: document.getElementById('admin-login-error'),
+    adminLogoutBtn: document.getElementById('admin-logout-btn'),
+
+    adminSettingsForm: document.getElementById('admin-settings-form'),
+    settingDuration: document.getElementById('setting-duration'),
+    settingMaxViolations: document.getElementById('setting-max-violations'),
+    settingFormUrl: document.getElementById('setting-form-url'),
+    adminSettingsSaved: document.getElementById('admin-settings-saved'),
+    violationLogBody: document.getElementById('violation-log-body'),
+
     startForm: document.getElementById('start-form'),
     nameInput: document.getElementById('student-name'),
     idInput: document.getElementById('student-id'),
@@ -79,16 +128,18 @@
     dqTime: document.getElementById('dq-time'),
   };
 
-  // Set the placeholder Google Form URL from config (single source of truth)
-  el.iframe.src = CONFIG.GOOGLE_FORM_URL;
-
   // =====================================================================
   // SCREEN MANAGEMENT HELPERS
   // =====================================================================
   function showScreen(screenEl) {
-    [el.startScreen, el.examScreen, el.disqualifiedScreen].forEach((s) => {
-      s.classList.remove('active');
-    });
+    [
+      el.homeScreen,
+      el.adminLoginScreen,
+      el.adminDashboardScreen,
+      el.startScreen,
+      el.examScreen,
+      el.disqualifiedScreen,
+    ].forEach((s) => s.classList.remove('active'));
     screenEl.classList.add('active');
   }
 
@@ -109,6 +160,120 @@
     // Placeholder: swap this console.log for a real network call, e.g.
     // fetch('/api/log-violation', { method: 'POST', body: JSON.stringify(record) });
     console.warn('[PROCTOR LOG]', record);
+
+    state.violationLog.push(record);
+    // Keep the admin table fresh if it happens to be open while an
+    // exam is running (e.g. examiner monitoring in a second window).
+    if (state.adminLoggedIn && el.adminDashboardScreen.classList.contains('active')) {
+      renderViolationLog();
+    }
+  }
+
+  // =====================================================================
+  // NAVIGATION: HOME SCREEN
+  // =====================================================================
+  el.getStartedBtn.addEventListener('click', () => {
+    showScreen(el.startScreen);
+  });
+
+  el.adminLoginLink.addEventListener('click', () => {
+    el.adminLoginError.hidden = true;
+    el.adminLoginForm.reset();
+    showScreen(el.adminLoginScreen);
+  });
+
+  el.adminBackBtn.addEventListener('click', () => {
+    showScreen(el.homeScreen);
+  });
+
+  el.studentBackBtn.addEventListener('click', () => {
+    showScreen(el.homeScreen);
+  });
+
+  // =====================================================================
+  // ADMIN / EXAMINER LOGIN
+  // =====================================================================
+  el.adminLoginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const username = el.adminUsername.value.trim();
+    const password = el.adminPassword.value;
+
+    // Placeholder check — replace with a real backend auth request.
+    if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
+      state.adminLoggedIn = true;
+      el.adminLoginError.hidden = true;
+      openAdminDashboard();
+    } else {
+      el.adminLoginError.textContent = 'Invalid username or password.';
+      el.adminLoginError.hidden = false;
+    }
+  });
+
+  el.adminLogoutBtn.addEventListener('click', () => {
+    state.adminLoggedIn = false;
+    showScreen(el.homeScreen);
+  });
+
+  function openAdminDashboard() {
+    // Pre-fill settings form with current CONFIG values.
+    el.settingDuration.value = Math.round(CONFIG.EXAM_DURATION_SECONDS / 60);
+    el.settingMaxViolations.value = CONFIG.MAX_VIOLATIONS;
+    el.settingFormUrl.value = CONFIG.GOOGLE_FORM_URL;
+    el.adminSettingsSaved.hidden = true;
+    renderViolationLog();
+    showScreen(el.adminDashboardScreen);
+  }
+
+  el.adminSettingsForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    const minutes = parseInt(el.settingDuration.value, 10);
+    const maxViolations = parseInt(el.settingMaxViolations.value, 10);
+    const formUrl = el.settingFormUrl.value.trim();
+
+    if (!minutes || minutes < 1 || !maxViolations || maxViolations < 1 || !formUrl) {
+      return;
+    }
+
+    CONFIG.EXAM_DURATION_SECONDS = minutes * 60;
+    CONFIG.MAX_VIOLATIONS = maxViolations;
+    CONFIG.GOOGLE_FORM_URL = formUrl;
+
+    el.adminSettingsSaved.hidden = false;
+  });
+
+  function renderViolationLog() {
+    if (state.violationLog.length === 0) {
+      el.violationLogBody.innerHTML =
+        '<tr><td colspan="5" class="empty-log">No violations logged yet.</td></tr>';
+      return;
+    }
+
+    // Most recent first.
+    const rows = [...state.violationLog]
+      .reverse()
+      .map((v) => {
+        const time = new Date(v.timestamp).toLocaleTimeString();
+        return `<tr>
+          <td>${escapeHtml(time)}</td>
+          <td>${escapeHtml(v.studentName)}</td>
+          <td>${escapeHtml(v.studentId)}</td>
+          <td>${escapeHtml(String(v.violationNumber))}</td>
+          <td>${escapeHtml(v.reason)}</td>
+        </tr>`;
+      })
+      .join('');
+
+    el.violationLogBody.innerHTML = rows;
+  }
+
+  // Minimal HTML-escaping helper so student-provided name/ID (or any
+  // free-text violation reason) can never inject markup into the
+  // admin dashboard table.
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   // =====================================================================
@@ -152,8 +317,19 @@
     el.displayId.textContent = state.studentId;
     updateViolationDisplay();
 
+    // Load the form fresh in case an admin updated CONFIG.GOOGLE_FORM_URL
+    // via the dashboard since page load.
+    if (el.iframe) {
+      el.iframe.src = CONFIG.GOOGLE_FORM_URL;
+    }
+
     showScreen(el.examScreen);
     document.body.classList.add('lockdown-active');
+
+    // Start the grace period immediately so the fullscreen transition
+    // itself can't be mistaken for a violation before the timer's
+    // first tick even happens.
+    state.graceUntil = Date.now() + CONFIG.GRACE_PERIOD_MS;
 
     startTimer();
   }
