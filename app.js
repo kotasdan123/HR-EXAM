@@ -27,7 +27,7 @@
   const CONFIG = {
     MAX_VIOLATIONS: 3,
     EXAM_DURATION_SECONDS: 60 * 60, // 60 minutes — adjust as needed
-    GOOGLE_FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSf_PLACEHOLDER_FORM_ID/viewform?embedded=true',
+    GOOGLE_FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?usp=header',
   };
 
   // -------------------------------------------------------------------
