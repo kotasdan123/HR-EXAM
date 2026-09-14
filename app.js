@@ -20,7 +20,7 @@
     studentName: '',
     studentId: '',
     violationCount: 0,
-    examActive: false, // Set to true ONLY during an ongoing exam
+    examActive: false, // Strict flag: ONLY true when timer is actively running
     disqualified: false,
     timerInterval: null,
     secondsRemaining: CONFIG.EXAM_DURATION_SECONDS,
@@ -84,29 +84,34 @@
     addUserMsg: document.getElementById('add-user-msg')
   };
 
+  // Ensure overlay is hidden immediately on load
+  if (el.overlay) el.overlay.hidden = true;
   if (el.iframe) el.iframe.src = CONFIG.GOOGLE_FORM_URL;
 
-  // Screen Navigation Helpers
+  // Screen Navigation
   function showScreen(screenEl) {
-    // When leaving the exam screen, make sure active exam state is set to false
-    if (screenEl !== el.examScreen) {
-      state.examActive = false;
-    }
+    // Force active state off whenever switching screens
+    state.examActive = false;
 
     [el.loginScreen, el.startScreen, el.examScreen, el.disqualifiedScreen, el.dashboardScreen].forEach(s => {
       if (s) s.classList.remove('active');
     });
+
     if (screenEl) screenEl.classList.add('active');
+
+    // Make sure overlay is never left open when switching views
+    if (el.overlay) el.overlay.hidden = true;
   }
 
-  // Check if student is currently taking an exam
-  function isExamCurrentlyActive() {
-    return state.examActive && 
-           !state.disqualified && 
+  // Strict validator for violation tracking
+  function canTrackViolations() {
+    return state.examActive === true && 
+           state.disqualified === false && 
            el.examScreen && 
            el.examScreen.classList.contains('active');
   }
 
+  // Navigation Button Handlers
   if (el.navLoginBtn) el.navLoginBtn.addEventListener('click', () => showScreen(el.loginScreen));
   if (el.loginBackBtn) el.loginBackBtn.addEventListener('click', () => showScreen(el.startScreen));
 
@@ -142,7 +147,7 @@
     });
   }
 
-  // Exam Start
+  // Exam Start ("Get Started")
   if (el.startForm) {
     el.startForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -152,14 +157,13 @@
       try {
         await enterFullscreen(document.documentElement);
       } catch (err) {
-        console.warn('Fullscreen request blocked during launch.');
+        console.warn('Fullscreen denied or skipped.');
       }
       beginExam();
     });
   }
 
   function beginExam() {
-    state.examActive = true;
     state.disqualified = false;
     state.violationCount = 0;
 
@@ -167,8 +171,10 @@
     if (el.displayId) el.displayId.textContent = state.studentId;
     updateViolationDisplay();
 
+    // Show screen first, then activate tracking flag
     showScreen(el.examScreen);
-    state.examActive = true; // Confirmed active exam state
+    state.examActive = true; 
+
     document.body.classList.add('lockdown-active');
     startTimer();
   }
@@ -186,30 +192,27 @@
     return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || document.mozFullScreenElement);
   }
 
-  // =========================================================================
-  // STRICT EXAM-ONLY MONITORING LISTENERS
-  // =========================================================================
+  // Violation Monitoring Listeners
   document.addEventListener('fullscreenchange', () => {
-    if (isExamCurrentlyActive() && !isFullscreen()) {
+    if (canTrackViolations() && !isFullscreen()) {
       registerViolation('Exited full-screen mode.');
     }
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (isExamCurrentlyActive() && document.hidden) {
+    if (canTrackViolations() && document.hidden) {
       registerViolation('Tab switched or application minimized.');
     }
   });
 
   window.addEventListener('blur', () => {
-    if (isExamCurrentlyActive()) {
+    if (canTrackViolations()) {
       registerViolation('Exam window lost focus.');
     }
   });
 
   function registerViolation(reason) {
-    // Secondary check: Never log violations unless actively on the exam screen
-    if (!isExamCurrentlyActive()) return;
+    if (!canTrackViolations()) return;
 
     const now = Date.now();
     if (now - state.lastViolationTimestamp < 800) return; // Debounce triggers
@@ -239,7 +242,7 @@
     el.resumeBtn.addEventListener('click', async () => {
       if (el.overlay) el.overlay.hidden = true;
 
-      if (isExamCurrentlyActive() && !isFullscreen()) {
+      if (canTrackViolations() && !isFullscreen()) {
         try {
           await enterFullscreen(document.documentElement);
         } catch (err) {
@@ -255,7 +258,7 @@
     if (state.timerInterval) clearInterval(state.timerInterval);
 
     state.timerInterval = setInterval(() => {
-      if (!isExamCurrentlyActive()) return;
+      if (!canTrackViolations()) return;
       state.secondsRemaining--;
       
       const m = String(Math.floor(state.secondsRemaining / 60)).padStart(2, '0');
