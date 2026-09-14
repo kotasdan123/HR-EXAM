@@ -60,6 +60,139 @@ body.lockdown-active {
 }
 
 /* =========================================================
+   SHARED BUTTONS / LINKS
+========================================================= */
+.primary-btn {
+  width: 100%;
+  margin-top: 24px;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.primary-btn:hover {
+  background: var(--accent-hover);
+}
+
+.primary-btn:active {
+  transform: scale(0.98);
+}
+
+.text-link {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 4px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-link:hover {
+  color: var(--accent);
+}
+
+.text-link.top-right {
+  position: fixed;
+  top: 24px;
+  right: 28px;
+  text-decoration: none;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  padding: 8px 18px;
+  border-radius: 8px;
+}
+
+.text-link.top-right:hover {
+  border-color: var(--accent);
+}
+
+.success-text {
+  color: var(--success);
+  font-size: 0.85rem;
+  margin-top: 12px;
+  text-align: center;
+}
+
+/* =========================================================
+   HOME / LANDING SCREEN
+========================================================= */
+.home-card {
+  text-align: center;
+}
+
+.home-card .footer-note {
+  margin-top: 20px;
+  line-height: 1.6;
+}
+
+/* =========================================================
+   ADMIN DASHBOARD
+========================================================= */
+.admin-card {
+  max-width: 640px;
+  text-align: left;
+}
+
+.admin-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-header-row h1 {
+  margin: 0;
+}
+
+.admin-card h3 {
+  margin: 28px 0 4px 0;
+  font-size: 1rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 20px;
+}
+
+#violation-log-wrapper {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  margin-top: 12px;
+}
+
+#violation-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+#violation-log-table th,
+#violation-log-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+#violation-log-table th {
+  background: var(--bg-panel);
+  position: sticky;
+  top: 0;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.empty-log {
+  color: var(--text-dim);
+  text-align: center !important;
+}
+
+/* =========================================================
    START SCREEN
 ========================================================= */
 .start-card {
