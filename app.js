@@ -1,10 +1,9 @@
 (() => {
   'use strict';
 
- const CONFIG = {
-    MAX_VIOLATIONS: 5,
+  const CONFIG = {
+    MAX_VIOLATIONS: 3,
     EXAM_DURATION_SECONDS: 60 * 60,
-    // Updated with your specific Google Form URL (embedded mode enabled)
     GOOGLE_FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?embedded=true'
   };
 
@@ -12,16 +11,16 @@
   const state = {
     currentUser: null,
     users: [
-      { username: 'admin', password: '123admin', role: 'superadmin' }
+      { username: 'admin', password: '123admin', role: 'superadmin' } // Default Superadmin Account
     ],
     submissions: [
-      { id: 'STU-101', name: 'Alice Smith', status: 'Submitted', score: '88%', violations: 0, time: '2026-03-15 09:15' },
-      { id: 'STU-102', name: 'Bob Jones', status: 'Disqualified', score: 'N/A', violations: 3, time: '2026-03-15 09:40' }
+      { name: 'Alice Smith', status: 'Submitted', score: '88%', violations: 0, time: '2026-03-15 09:15' },
+      { name: 'Bob Jones', status: 'Disqualified', score: 'N/A', violations: 3, time: '2026-03-15 09:40' },
+      { name: 'Charlie Brown', status: 'Submitted', score: '92%', violations: 1, time: '2026-03-15 10:20' }
     ],
     studentName: '',
-    studentId: '',
     violationCount: 0,
-    examActive: false, // Strict flag: ONLY true when timer is actively running
+    examActive: false, // Strict flag: True ONLY while in active exam view
     disqualified: false,
     timerInterval: null,
     secondsRemaining: CONFIG.EXAM_DURATION_SECONDS,
@@ -46,11 +45,9 @@
 
     startForm: document.getElementById('start-form'),
     nameInput: document.getElementById('student-name'),
-    idInput: document.getElementById('student-id'),
     startError: document.getElementById('start-error'),
 
     displayName: document.getElementById('display-name'),
-    displayId: document.getElementById('display-id'),
     timer: document.getElementById('timer'),
     violationTracker: document.getElementById('violation-tracker'),
     iframe: document.getElementById('exam-iframe'),
@@ -61,7 +58,6 @@
     resumeBtn: document.getElementById('resume-btn'),
 
     dqName: document.getElementById('dq-name'),
-    dqId: document.getElementById('dq-id'),
     dqCount: document.getElementById('dq-count'),
     dqTime: document.getElementById('dq-time'),
 
@@ -72,7 +68,7 @@
     tabUsers: document.getElementById('tab-users'),
 
     statTotal: document.getElementById('stat-total'),
-    statAvgScore: document.getElementById('stat-avg-score'),
+    statPassRate: document.getElementById('stat-pass-rate'),
     statViolations: document.getElementById('stat-violations'),
     statDisqualified: document.getElementById('stat-disqualified'),
     submissionsTableBody: document.getElementById('submissions-table-body'),
@@ -85,38 +81,49 @@
     addUserMsg: document.getElementById('add-user-msg')
   };
 
-  // Ensure overlay is hidden immediately on load
+  // Initialize Default State
   if (el.overlay) el.overlay.hidden = true;
   if (el.iframe) el.iframe.src = CONFIG.GOOGLE_FORM_URL;
 
-  // Screen Navigation
+  // Screen Switcher Helper
   function showScreen(screenEl) {
-    // Force active state off whenever switching screens
-    state.examActive = false;
+    // Disable active exam status if leaving exam screen
+    if (screenEl !== el.examScreen) {
+      state.examActive = false;
+    }
 
-    [el.loginScreen, el.startScreen, el.examScreen, el.disqualifiedScreen, el.dashboardScreen].forEach(s => {
-      if (s) s.classList.remove('active');
+    const allScreens = [el.loginScreen, el.startScreen, el.examScreen, el.disqualifiedScreen, el.dashboardScreen];
+    allScreens.forEach(s => {
+      if (s) {
+        s.classList.remove('active');
+        s.style.display = 'none'; // Ensure CSS override doesn't leave elements hidden
+      }
     });
 
-    if (screenEl) screenEl.classList.add('active');
+    if (screenEl) {
+      screenEl.classList.add('active');
+      screenEl.style.display = 'flex';
+    }
 
-    // Make sure overlay is never left open when switching views
     if (el.overlay) el.overlay.hidden = true;
   }
 
-  // Strict validator for violation tracking
-  function canTrackViolations() {
+  // Initial Screen State
+  showScreen(el.startScreen);
+
+  // Strict Validator: Ensures violations are tracked ONLY during the exam
+  function isExamInSession() {
     return state.examActive === true && 
            state.disqualified === false && 
            el.examScreen && 
            el.examScreen.classList.contains('active');
   }
 
-  // Navigation Button Handlers
+  // Navigation Handlers
   if (el.navLoginBtn) el.navLoginBtn.addEventListener('click', () => showScreen(el.loginScreen));
   if (el.loginBackBtn) el.loginBackBtn.addEventListener('click', () => showScreen(el.startScreen));
 
-  // Authentication Controls
+  // Staff Portal Login
   if (el.loginForm) {
     el.loginForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -128,12 +135,14 @@
         state.currentUser = user;
         el.loginError.hidden = true;
         el.loginForm.reset();
+        
         setupDashboard();
         showScreen(el.dashboardScreen);
+        
         el.navLoginBtn.hidden = true;
         el.navLogoutBtn.hidden = false;
       } else {
-        el.loginError.textContent = 'Invalid credentials provided.';
+        el.loginError.textContent = 'Invalid username or password.';
         el.loginError.hidden = false;
       }
     });
@@ -148,17 +157,16 @@
     });
   }
 
-  // Exam Start ("Get Started")
+  // Student Starts Exam ("Get Started")
   if (el.startForm) {
     el.startForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       state.studentName = el.nameInput.value.trim();
-      state.studentId = el.idInput.value.trim();
 
       try {
         await enterFullscreen(document.documentElement);
       } catch (err) {
-        console.warn('Fullscreen denied or skipped.');
+        console.warn('Fullscreen request skipped.');
       }
       beginExam();
     });
@@ -169,12 +177,10 @@
     state.violationCount = 0;
 
     if (el.displayName) el.displayName.textContent = state.studentName;
-    if (el.displayId) el.displayId.textContent = state.studentId;
     updateViolationDisplay();
 
-    // Show screen first, then activate tracking flag
     showScreen(el.examScreen);
-    state.examActive = true; 
+    state.examActive = true; // Tracking unlocked ONLY here
 
     document.body.classList.add('lockdown-active');
     startTimer();
@@ -183,9 +189,7 @@
   // Cross-browser Fullscreen Helpers
   function enterFullscreen(elem) {
     const req = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.msRequestFullscreen || elem.mozRequestFullScreen;
-    if (req) {
-      return req.call(elem).catch(() => {});
-    }
+    if (req) return req.call(elem).catch(() => {});
     return Promise.resolve();
   }
 
@@ -193,27 +197,29 @@
     return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || document.mozFullScreenElement);
   }
 
-  // Violation Monitoring Listeners
+  // =========================================================================
+  // VIOLATION DETECTORS (Strictly guarded by isExamInSession)
+  // =========================================================================
   document.addEventListener('fullscreenchange', () => {
-    if (canTrackViolations() && !isFullscreen()) {
+    if (isExamInSession() && !isFullscreen()) {
       registerViolation('Exited full-screen mode.');
     }
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (canTrackViolations() && document.hidden) {
+    if (isExamInSession() && document.hidden) {
       registerViolation('Tab switched or application minimized.');
     }
   });
 
   window.addEventListener('blur', () => {
-    if (canTrackViolations()) {
+    if (isExamInSession()) {
       registerViolation('Exam window lost focus.');
     }
   });
 
   function registerViolation(reason) {
-    if (!canTrackViolations()) return;
+    if (!isExamInSession()) return; // Absolute protection against non-exam screens
 
     const now = Date.now();
     if (now - state.lastViolationTimestamp < 800) return; // Debounce triggers
@@ -243,7 +249,7 @@
     el.resumeBtn.addEventListener('click', async () => {
       if (el.overlay) el.overlay.hidden = true;
 
-      if (canTrackViolations() && !isFullscreen()) {
+      if (isExamInSession() && !isFullscreen()) {
         try {
           await enterFullscreen(document.documentElement);
         } catch (err) {
@@ -259,7 +265,7 @@
     if (state.timerInterval) clearInterval(state.timerInterval);
 
     state.timerInterval = setInterval(() => {
-      if (!canTrackViolations()) return;
+      if (!isExamInSession()) return;
       state.secondsRemaining--;
       
       const m = String(Math.floor(state.secondsRemaining / 60)).padStart(2, '0');
@@ -280,7 +286,6 @@
 
     if (el.overlay) el.overlay.hidden = true;
     if (el.dqName) el.dqName.textContent = state.studentName;
-    if (el.dqId) el.dqId.textContent = state.studentId;
     if (el.dqCount) el.dqCount.textContent = state.violationCount;
     if (el.dqTime) el.dqTime.textContent = new Date().toLocaleTimeString();
 
@@ -291,7 +296,6 @@
 
   function completeExam(status) {
     state.submissions.push({
-      id: state.studentId,
       name: state.studentName,
       status: status,
       score: status === 'Disqualified' ? 'N/A' : 'Pending',
@@ -300,10 +304,15 @@
     });
   }
 
-  // Dashboard Setup
+  // =========================================================================
+  // DASHBOARD & ANALYTICS ENGINE
+  // =========================================================================
   function setupDashboard() {
-    if (el.userDisplayRole) el.userDisplayRole.textContent = `${state.currentUser.username} (${state.currentUser.role})`;
+    if (el.userDisplayRole) {
+      el.userDisplayRole.textContent = `${state.currentUser.username} (${state.currentUser.role.toUpperCase()})`;
+    }
     
+    // Role Permission Controls
     if (state.currentUser.role === 'superadmin') {
       if (el.tabUsersBtn) el.tabUsersBtn.hidden = false;
     } else {
@@ -320,20 +329,21 @@
     const total = state.submissions.length;
     const totalViolations = state.submissions.reduce((acc, curr) => acc + curr.violations, 0);
     const disqualifiedCount = state.submissions.filter(s => s.status === 'Disqualified').length;
+    const submittedCount = total - disqualifiedCount;
+    const passRate = total > 0 ? Math.round((submittedCount / total) * 100) : 0;
 
     if (el.statTotal) el.statTotal.textContent = total;
+    if (el.statPassRate) el.statPassRate.textContent = `${passRate}%`;
     if (el.statViolations) el.statViolations.textContent = totalViolations;
     if (el.statDisqualified) el.statDisqualified.textContent = disqualifiedCount;
-    if (el.statAvgScore) el.statAvgScore.textContent = '85%';
   }
 
   function renderSubmissionsTable() {
     if (!el.submissionsTableBody) return;
     el.submissionsTableBody.innerHTML = state.submissions.map(s => `
       <tr>
-        <td>${s.id}</td>
-        <td>${s.name}</td>
-        <td><strong style="color: ${s.status === 'Disqualified' ? 'var(--danger)' : 'var(--success)'}">${s.status}</strong></td>
+        <td><strong>${s.name}</strong></td>
+        <td><span style="color: ${s.status === 'Disqualified' ? 'var(--danger)' : 'var(--success)'}; font-weight:600;">${s.status}</span></td>
         <td>${s.score}</td>
         <td>${s.violations}</td>
         <td>${s.time}</td>
@@ -345,12 +355,13 @@
     if (!el.usersTableBody) return;
     el.usersTableBody.innerHTML = state.users.map(u => `
       <tr>
-        <td>${u.username}</td>
-        <td>${u.role}</td>
+        <td><strong>${u.username}</strong></td>
+        <td><span class="badge">${u.role.toUpperCase()}</span></td>
       </tr>
     `).join('');
   }
 
+  // Superadmin Form Logic
   if (el.addUserForm) {
     el.addUserForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -376,6 +387,7 @@
     });
   }
 
+  // Tab Switching
   if (el.tabOverviewBtn) el.tabOverviewBtn.addEventListener('click', () => switchTab('overview'));
   if (el.tabUsersBtn) el.tabUsersBtn.addEventListener('click', () => switchTab('users'));
 
