@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Secure Exam Proctoring Environment</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ============================================================
+       SCREEN 1: START / REGISTRATION SCREEN
+       Collects student identity before the exam is unlocked.
+  ============================================================= -->
+  <div id="start-screen" class="screen active">
+    <div class="start-card">
+      <h1>Secure Exam Environment</h1>
+      <p class="subtitle">Please read the instructions carefully before beginning.</p>
+
+      <form id="start-form" autocomplete="off">
+        <label for="student-name">Full Name</label>
+        <input type="text" id="student-name" placeholder="e.g. Juan Dela Cruz" required />
+
+        <label for="student-id">Student ID</label>
+        <input type="text" id="student-id" placeholder="e.g. 2023-00123" required />
+
+        <div class="rules-box">
+          <h3>Exam Rules</h3>
+          <ul>
+            <li>The exam will run in <strong>full-screen mode</strong>. Do not exit it.</li>
+            <li>Switching tabs, minimizing the window, or clicking outside the exam counts as a violation.</li>
+            <li>Copy, paste, right-click, and developer tools are disabled.</li>
+            <li><strong>3 violations</strong> will result in automatic disqualification.</li>
+          </ul>
+        </div>
+
+        <button type="submit" id="start-exam-btn">Start Exam (Enter Full-Screen)</button>
+        <p id="start-error" class="error-text" hidden></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 2: EXAM DASHBOARD
+       Holds the student info bar, timer, violation tracker, and
+       the sandboxed Google Form iframe.
+  ============================================================= -->
+  <div id="exam-screen" class="screen">
+    <header id="exam-header">
+      <div class="header-block">
+        <span class="label">Student</span>
+        <span id="display-name" class="value">—</span>
+      </div>
+      <div class="header-block">
+        <span class="label">Student ID</span>
+        <span id="display-id" class="value">—</span>
+      </div>
+      <div class="header-block">
+        <span class="label">Time Remaining</span>
+        <span id="timer" class="value timer">60:00</span>
+      </div>
+      <div class="header-block">
+        <span class="label">Violations</span>
+        <span id="violation-tracker" class="value violations">0 / 3</span>
+      </div>
+    </header>
+
+    <main id="form-container">
+      <!-- Placeholder Google Form URL — replace with your real embed link -->
+      <iframe
+        id="exam-iframe"
+        src="https://docs.google.com/forms/d/e/1FAIpQLSf_PLACEHOLDER_FORM_ID/viewform?embedded=true"
+        title="Exam Form"
+        loading="eager"
+        referrerpolicy="no-referrer">
+        Loading exam…
+      </iframe>
+    </main>
+  </div>
+
+  <!-- ============================================================
+       OVERLAY: VIOLATION / INTERRUPTION MODAL
+       Masks the exam completely until the student re-locks in.
+  ============================================================= -->
+  <div id="violation-overlay" class="overlay" hidden>
+    <div class="overlay-card violation-card">
+      <div class="icon-warning">&#9888;</div>
+      <h2>VIOLATION DETECTED</h2>
+      <p id="violation-reason">You left the exam environment.</p>
+      <p class="violation-count-text">
+        Violation <span id="overlay-violation-count">1</span> of 3
+      </p>
+      <button id="resume-btn">Resume &amp; Re-lock Screen</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 3: DISQUALIFICATION SCREEN
+       Final, permanent state after the 3rd violation.
+  ============================================================= -->
+  <div id="disqualified-screen" class="screen">
+    <div class="start-card disqualified-card">
+      <div class="icon-disqualified">&#10060;</div>
+      <h1>Exam Terminated</h1>
+      <p class="subtitle">You have been disqualified for exceeding the maximum allowed violations.</p>
+      <div class="dq-details">
+        <p><strong>Student:</strong> <span id="dq-name">—</span></p>
+        <p><strong>Student ID:</strong> <span id="dq-id">—</span></p>
+        <p><strong>Total Violations:</strong> <span id="dq-count">3</span></p>
+        <p><strong>Time of Termination:</strong> <span id="dq-time">—</span></p>
+      </div>
+      <p class="footer-note">Please contact your exam administrator for further instructions.</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

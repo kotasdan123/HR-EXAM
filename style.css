@@ -1,0 +1,334 @@
+/* =========================================================
+   ROOT / RESET
+========================================================= */
+:root {
+  --bg-dark: #0f1420;
+  --bg-panel: #161d2e;
+  --bg-card: #1c2438;
+  --accent: #4f7cff;
+  --accent-hover: #3d64e0;
+  --danger: #e5484d;
+  --danger-hover: #c93f43;
+  --success: #2ecc71;
+  --text-main: #e9ecf5;
+  --text-dim: #9aa4bf;
+  --border-color: #2a3350;
+  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-dark);
+  color: var(--text-main);
+  overflow: hidden;
+}
+
+/* Disable text selection globally — part of the input lockout requirement */
+body.lockdown-active {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* =========================================================
+   SCREEN MANAGEMENT
+========================================================= */
+.screen {
+  display: none;
+  height: 100vh;
+  width: 100vw;
+}
+
+.screen.active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#exam-screen.active {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+/* =========================================================
+   START SCREEN
+========================================================= */
+.start-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 40px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.start-card h1 {
+  margin: 0 0 8px 0;
+  font-size: 1.6rem;
+}
+
+.subtitle {
+  color: var(--text-dim);
+  margin: 0 0 24px 0;
+  font-size: 0.95rem;
+}
+
+#start-form label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin: 14px 0 6px 0;
+}
+
+#start-form input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel);
+  color: var(--text-main);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+#start-form input:focus {
+  border-color: var(--accent);
+}
+
+.rules-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-top: 20px;
+}
+
+.rules-box h3 {
+  margin: 0 0 10px 0;
+  font-size: 0.95rem;
+}
+
+.rules-box ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+button#start-exam-btn,
+button#resume-btn {
+  width: 100%;
+  margin-top: 24px;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+button#start-exam-btn:hover,
+button#resume-btn:hover {
+  background: var(--accent-hover);
+}
+
+button#start-exam-btn:active,
+button#resume-btn:active {
+  transform: scale(0.98);
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin-top: 12px;
+  text-align: center;
+}
+
+/* =========================================================
+   EXAM DASHBOARD HEADER
+========================================================= */
+#exam-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-color);
+  padding: 14px 28px;
+  flex-shrink: 0;
+  gap: 16px;
+}
+
+.header-block {
+  display: flex;
+  flex-direction: column;
+  min-width: 100px;
+}
+
+.header-block .label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.header-block .value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.value.timer {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.value.violations {
+  color: var(--success);
+  transition: color 0.2s ease;
+}
+
+.value.violations.warning {
+  color: #f5a623;
+}
+
+.value.violations.critical {
+  color: var(--danger);
+}
+
+/* =========================================================
+   FORM CONTAINER / IFRAME
+========================================================= */
+#form-container {
+  flex: 1;
+  display: flex;
+  padding: 16px;
+  overflow: hidden;
+}
+
+#exam-iframe {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 12px;
+  background: white;
+}
+
+/* When the exam is "blurred" state prior to overlay confirmation */
+#form-container.blurred #exam-iframe {
+  filter: blur(6px) brightness(0.5);
+  pointer-events: none;
+}
+
+/* =========================================================
+   OVERLAY (Violation / Interruption Modal)
+========================================================= */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 16, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.overlay-card {
+  background: var(--bg-card);
+  border: 1px solid var(--danger);
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 440px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(229, 72, 77, 0.25);
+}
+
+.icon-warning {
+  font-size: 3rem;
+  margin-bottom: 10px;
+}
+
+.violation-card h2 {
+  color: var(--danger);
+  margin: 0 0 10px 0;
+  letter-spacing: 0.03em;
+}
+
+.violation-card p {
+  color: var(--text-dim);
+  margin: 6px 0;
+}
+
+.violation-count-text {
+  font-weight: 600;
+  color: var(--text-main) !important;
+  margin-bottom: 6px !important;
+}
+
+/* =========================================================
+   DISQUALIFIED SCREEN
+========================================================= */
+.disqualified-card {
+  text-align: center;
+  border-color: var(--danger);
+}
+
+.icon-disqualified {
+  font-size: 2.6rem;
+  margin-bottom: 8px;
+}
+
+.disqualified-card h1 {
+  color: var(--danger);
+}
+
+.dq-details {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin: 20px 0;
+  text-align: left;
+  font-size: 0.9rem;
+  line-height: 1.8;
+}
+
+.footer-note {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+@media (max-width: 720px) {
+  #exam-header {
+    flex-wrap: wrap;
+    gap: 10px 20px;
+  }
+  .header-block {
+    min-width: 45%;
+  }
+}
