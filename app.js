@@ -11,7 +11,7 @@
   const state = {
     currentUser: null,
     users: [
-      { username: 'admin', password: '123admin', role: 'superadmin' } // Default User
+      { username: 'admin', password: '123admin', role: 'superadmin' }
     ],
     submissions: [
       { id: 'STU-101', name: 'Alice Smith', status: 'Submitted', score: '88%', violations: 0, time: '2026-03-15 09:15' },
@@ -20,14 +20,14 @@
     studentName: '',
     studentId: '',
     violationCount: 0,
-    examActive: false, // Ensures detection occurs ONLY during active exam
+    examActive: false,
     disqualified: false,
     timerInterval: null,
     secondsRemaining: CONFIG.EXAM_DURATION_SECONDS,
     lastViolationTimestamp: 0
   };
 
-  // DOM Elements
+  // DOM References
   const el = {
     navLoginBtn: document.getElementById('nav-login-btn'),
     navLogoutBtn: document.getElementById('nav-logout-btn'),
@@ -64,7 +64,7 @@
     dqCount: document.getElementById('dq-count'),
     dqTime: document.getElementById('dq-time'),
 
-    userDisplayRole: document.userDisplayRole || document.getElementById('user-display-role'),
+    userDisplayRole: document.getElementById('user-display-role'),
     tabOverviewBtn: document.getElementById('tab-overview-btn'),
     tabUsersBtn: document.getElementById('tab-users-btn'),
     tabOverview: document.getElementById('tab-overview'),
@@ -84,67 +84,74 @@
     addUserMsg: document.getElementById('add-user-msg')
   };
 
-  el.iframe.src = CONFIG.GOOGLE_FORM_URL;
+  if (el.iframe) el.iframe.src = CONFIG.GOOGLE_FORM_URL;
 
-  // Navigation Logic
+  // Screen Navigation
   function showScreen(screenEl) {
-    [el.loginScreen, el.startScreen, el.examScreen, el.disqualifiedScreen, el.dashboardScreen].forEach(s => s.classList.remove('active'));
-    screenEl.classList.add('active');
+    [el.loginScreen, el.startScreen, el.examScreen, el.disqualifiedScreen, el.dashboardScreen].forEach(s => {
+      if (s) s.classList.remove('active');
+    });
+    if (screenEl) screenEl.classList.add('active');
   }
 
-  el.navLoginBtn.addEventListener('click', () => showScreen(el.loginScreen));
-  el.loginBackBtn.addEventListener('click', () => showScreen(el.startScreen));
+  if (el.navLoginBtn) el.navLoginBtn.addEventListener('click', () => showScreen(el.loginScreen));
+  if (el.loginBackBtn) el.loginBackBtn.addEventListener('click', () => showScreen(el.startScreen));
 
   // Authentication
-  el.loginForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const username = el.loginUsername.value.trim();
-    const password = el.loginPassword.value.trim();
+  if (el.loginForm) {
+    el.loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const username = el.loginUsername.value.trim();
+      const password = el.loginPassword.value.trim();
 
-    const user = state.users.find(u => u.username === username && u.password === password);
-    if (user) {
-      state.currentUser = user;
-      el.loginError.hidden = true;
-      el.loginForm.reset();
-      setupDashboard();
-      showScreen(el.dashboardScreen);
-      el.navLoginBtn.hidden = true;
-      el.navLogoutBtn.hidden = false;
-    } else {
-      el.loginError.textContent = 'Invalid credentials provided.';
-      el.loginError.hidden = false;
-    }
-  });
+      const user = state.users.find(u => u.username === username && u.password === password);
+      if (user) {
+        state.currentUser = user;
+        el.loginError.hidden = true;
+        el.loginForm.reset();
+        setupDashboard();
+        showScreen(el.dashboardScreen);
+        el.navLoginBtn.hidden = true;
+        el.navLogoutBtn.hidden = false;
+      } else {
+        el.loginError.textContent = 'Invalid credentials provided.';
+        el.loginError.hidden = false;
+      }
+    });
+  }
 
-  el.navLogoutBtn.addEventListener('click', () => {
-    state.currentUser = null;
-    el.navLoginBtn.hidden = false;
-    el.navLogoutBtn.hidden = true;
-    showScreen(el.startScreen);
-  });
+  if (el.navLogoutBtn) {
+    el.navLogoutBtn.addEventListener('click', () => {
+      state.currentUser = null;
+      el.navLoginBtn.hidden = false;
+      el.navLogoutBtn.hidden = true;
+      showScreen(el.startScreen);
+    });
+  }
 
-  // Start Exam Action ("Get Started")
-  el.startForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    state.studentName = el.nameInput.value.trim();
-    state.studentId = el.idInput.value.trim();
+  // Exam Initialization
+  if (el.startForm) {
+    el.startForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      state.studentName = el.nameInput.value.trim();
+      state.studentId = el.idInput.value.trim();
 
-    try {
-      await enterFullscreen(document.documentElement);
+      try {
+        await enterFullscreen(document.documentElement);
+      } catch (err) {
+        console.warn('Fullscreen prevented or unsupported on initial start.');
+      }
       beginExam();
-    } catch (err) {
-      el.startError.textContent = 'Fullscreen permission is required to start.';
-      el.startError.hidden = false;
-    }
-  });
+    });
+  }
 
   function beginExam() {
     state.examActive = true;
     state.disqualified = false;
     state.violationCount = 0;
 
-    el.displayName.textContent = state.studentName;
-    el.displayId.textContent = state.studentId;
+    if (el.displayName) el.displayName.textContent = state.studentName;
+    if (el.displayId) el.displayId.textContent = state.studentId;
     updateViolationDisplay();
 
     showScreen(el.examScreen);
@@ -152,23 +159,26 @@
     startTimer();
   }
 
-  // Fullscreen Handlers
+  // Helper: Cross-browser Fullscreen
   function enterFullscreen(elem) {
-    const req = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.msRequestFullscreen;
-    return req ? req.call(elem) : Promise.reject();
+    const req = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.msRequestFullscreen || elem.mozRequestFullScreen;
+    if (req) {
+      return req.call(elem).catch(() => {});
+    }
+    return Promise.resolve();
   }
 
   function isFullscreen() {
-    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || document.mozFullScreenElement);
   }
 
+  // Monitoring Listeners
   document.addEventListener('fullscreenchange', () => {
     if (state.examActive && !state.disqualified && !isFullscreen()) {
       registerViolation('Exited full-screen mode.');
     }
   });
 
-  // Violation Monitoring (ACTIVE ONLY WHILE TIMER/EXAM IS ACTIVE)
   document.addEventListener('visibilitychange', () => {
     if (state.examActive && !state.disqualified && document.hidden) {
       registerViolation('Tab switched or application minimized.');
@@ -183,7 +193,7 @@
 
   function registerViolation(reason) {
     const now = Date.now();
-    if (now - state.lastViolationTimestamp < 500) return; // Debounce
+    if (now - state.lastViolationTimestamp < 800) return; // Debounce duplicate events
     state.lastViolationTimestamp = now;
 
     state.violationCount++;
@@ -192,35 +202,48 @@
     if (state.violationCount >= CONFIG.MAX_VIOLATIONS) {
       disqualifyStudent();
     } else {
-      el.violationReason.textContent = reason;
-      el.overlayViolationCount.textContent = state.violationCount;
-      el.overlay.hidden = false;
+      if (el.violationReason) el.violationReason.textContent = reason;
+      if (el.overlayViolationCount) el.overlayViolationCount.textContent = state.violationCount;
+      if (el.overlay) el.overlay.hidden = false;
     }
   }
 
   function updateViolationDisplay() {
+    if (!el.violationTracker) return;
     el.violationTracker.textContent = `${state.violationCount} / ${CONFIG.MAX_VIOLATIONS}`;
     el.violationTracker.className = 'value violations ' + 
       (state.violationCount === 2 ? 'warning' : state.violationCount >= 3 ? 'critical' : '');
   }
 
-  el.resumeBtn.addEventListener('click', async () => {
-    el.overlay.hidden = true;
-    if (!isFullscreen() && state.examActive) {
-      try { await enterFullscreen(document.documentElement); } catch (e) {}
-    }
-  });
+  // FIX: Resume Button Event Handler
+  if (el.resumeBtn) {
+    el.resumeBtn.addEventListener('click', async () => {
+      // 1. Force overlay removal immediately
+      if (el.overlay) el.overlay.hidden = true;
+
+      // 2. Safely attempt to re-establish fullscreen
+      if (state.examActive && !state.disqualified && !isFullscreen()) {
+        try {
+          await enterFullscreen(document.documentElement);
+        } catch (err) {
+          console.warn('Could not re-enter fullscreen:', err);
+        }
+      }
+    });
+  }
 
   // Timer & Disqualification
   function startTimer() {
     state.secondsRemaining = CONFIG.EXAM_DURATION_SECONDS;
+    if (state.timerInterval) clearInterval(state.timerInterval);
+
     state.timerInterval = setInterval(() => {
       if (!state.examActive) return;
       state.secondsRemaining--;
       
       const m = String(Math.floor(state.secondsRemaining / 60)).padStart(2, '0');
       const s = String(state.secondsRemaining % 60).padStart(2, '0');
-      el.timer.textContent = `${m}:${s}`;
+      if (el.timer) el.timer.textContent = `${m}:${s}`;
 
       if (state.secondsRemaining <= 0) {
         clearInterval(state.timerInterval);
@@ -231,14 +254,14 @@
 
   function disqualifyStudent() {
     state.disqualified = true;
-    state.examActive = false; // Stop tracking violations
+    state.examActive = false; 
     clearInterval(state.timerInterval);
 
-    el.overlay.hidden = true;
-    el.dqName.textContent = state.studentName;
-    el.dqId.textContent = state.studentId;
-    el.dqCount.textContent = state.violationCount;
-    el.dqTime.textContent = new Date().toLocaleTimeString();
+    if (el.overlay) el.overlay.hidden = true;
+    if (el.dqName) el.dqName.textContent = state.studentName;
+    if (el.dqId) el.dqId.textContent = state.studentId;
+    if (el.dqCount) el.dqCount.textContent = state.violationCount;
+    if (el.dqTime) el.dqTime.textContent = new Date().toLocaleTimeString();
 
     completeExam('Disqualified');
     showScreen(el.disqualifiedScreen);
@@ -256,15 +279,14 @@
     });
   }
 
-  // Dashboard & Analytics Engine
+  // Dashboard & Management Functions
   function setupDashboard() {
-    el.userDisplayRole.textContent = `${state.currentUser.username} (${state.currentUser.role})`;
+    if (el.userDisplayRole) el.userDisplayRole.textContent = `${state.currentUser.username} (${state.currentUser.role})`;
     
-    // Role-based visibility for Settings (Superadmin only)
     if (state.currentUser.role === 'superadmin') {
-      el.tabUsersBtn.hidden = false;
+      if (el.tabUsersBtn) el.tabUsersBtn.hidden = false;
     } else {
-      el.tabUsersBtn.hidden = true;
+      if (el.tabUsersBtn) el.tabUsersBtn.hidden = true;
       switchTab('overview');
     }
 
@@ -278,13 +300,14 @@
     const totalViolations = state.submissions.reduce((acc, curr) => acc + curr.violations, 0);
     const disqualifiedCount = state.submissions.filter(s => s.status === 'Disqualified').length;
 
-    el.statTotal.textContent = total;
-    el.statViolations.textContent = totalViolations;
-    el.statDisqualified.textContent = disqualifiedCount;
-    el.statAvgScore.textContent = '85%'; // Default sample aggregate
+    if (el.statTotal) el.statTotal.textContent = total;
+    if (el.statViolations) el.statViolations.textContent = totalViolations;
+    if (el.statDisqualified) el.statDisqualified.textContent = disqualifiedCount;
+    if (el.statAvgScore) el.statAvgScore.textContent = '85%';
   }
 
   function renderSubmissionsTable() {
+    if (!el.submissionsTableBody) return;
     el.submissionsTableBody.innerHTML = state.submissions.map(s => `
       <tr>
         <td>${s.id}</td>
@@ -298,6 +321,7 @@
   }
 
   function renderUsersTable() {
+    if (!el.usersTableBody) return;
     el.usersTableBody.innerHTML = state.users.map(u => `
       <tr>
         <td>${u.username}</td>
@@ -306,45 +330,45 @@
     `).join('');
   }
 
-  // Superadmin Add User Form
-  el.addUserForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (state.currentUser.role !== 'superadmin') return;
+  if (el.addUserForm) {
+    el.addUserForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!state.currentUser || state.currentUser.role !== 'superadmin') return;
 
-    const username = el.newUsername.value.trim();
-    const password = el.newPassword.value.trim();
-    const role = el.newRole.value;
+      const username = el.newUsername.value.trim();
+      const password = el.newPassword.value.trim();
+      const role = el.newRole.value;
 
-    if (state.users.some(u => u.username === username)) {
-      el.addUserMsg.textContent = 'Username already exists.';
-      el.addUserMsg.style.color = 'var(--danger)';
+      if (state.users.some(u => u.username === username)) {
+        el.addUserMsg.textContent = 'Username already exists.';
+        el.addUserMsg.style.color = 'var(--danger)';
+        el.addUserMsg.hidden = false;
+        return;
+      }
+
+      state.users.push({ username, password, role });
+      renderUsersTable();
+      el.addUserForm.reset();
+      el.addUserMsg.textContent = 'User added successfully!';
+      el.addUserMsg.style.color = 'var(--success)';
       el.addUserMsg.hidden = false;
-      return;
-    }
+    });
+  }
 
-    state.users.push({ username, password, role });
-    renderUsersTable();
-    el.addUserForm.reset();
-    el.addUserMsg.textContent = 'User added successfully!';
-    el.addUserMsg.style.color = 'var(--success)';
-    el.addUserMsg.hidden = false;
-  });
-
-  // Tab Navigation Controls
-  el.tabOverviewBtn.addEventListener('click', () => switchTab('overview'));
-  el.tabUsersBtn.addEventListener('click', () => switchTab('users'));
+  if (el.tabOverviewBtn) el.tabOverviewBtn.addEventListener('click', () => switchTab('overview'));
+  if (el.tabUsersBtn) el.tabUsersBtn.addEventListener('click', () => switchTab('users'));
 
   function switchTab(tab) {
     if (tab === 'overview') {
-      el.tabOverviewBtn.classList.add('active');
-      el.tabUsersBtn.classList.remove('active');
-      el.tabOverview.classList.add('active');
-      el.tabUsers.classList.remove('active');
+      if (el.tabOverviewBtn) el.tabOverviewBtn.classList.add('active');
+      if (el.tabUsersBtn) el.tabUsersBtn.classList.remove('active');
+      if (el.tabOverview) el.tabOverview.classList.add('active');
+      if (el.tabUsers) el.tabUsers.classList.remove('active');
     } else {
-      el.tabUsersBtn.classList.add('active');
-      el.tabOverviewBtn.classList.remove('active');
-      el.tabUsers.classList.add('active');
-      el.tabOverview.classList.remove('active');
+      if (el.tabUsersBtn) el.tabUsersBtn.classList.add('active');
+      if (el.tabOverviewBtn) el.tabOverviewBtn.classList.remove('active');
+      if (el.tabUsers) el.tabUsers.classList.add('active');
+      if (el.tabOverview) el.tabOverview.classList.remove('active');
     }
   }
 })();
