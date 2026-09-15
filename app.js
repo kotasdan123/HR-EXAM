@@ -1,4 +1,3 @@
-```javascript
 /* Secure Exam Portal - frontend prototype
    Builds on the original client-side proctoring approach. Because this is a
    browser-only app, authentication, passwords, attempt locks and logs are
