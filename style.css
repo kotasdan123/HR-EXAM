@@ -42,3 +42,83 @@
 .security-dot{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px rgba(49,196,141,.12);flex:0 0 8px}
 @media(max-width:1100px){.proctor-login{grid-template-columns:1fr;gap:10px}.proctor-brand{display:block;padding:30px 20px 10px}.proctor-brand h1{font-size:64px}.proctor-benefits{grid-template-columns:repeat(3,1fr);max-width:none}.proctor-card{min-height:auto}}
 @media(max-width:700px){.proctor-brand{padding:20px 5px 5px}.proctor-brand h1{font-size:54px;letter-spacing:-3px}.proctor-benefits{grid-template-columns:1fr}.proctor-card{padding:28px 22px}.proctor-tagline{font-size:16px!important}}
+
+/* =========================================================
+   THEME / LOGIN RELIABILITY FIX
+   ========================================================= */
+html[data-theme="light"] body,
+body.light{
+  --bg:#f3f6fb;
+  --panel:#ffffff;
+  --card:#ffffff;
+  --card2:#f7f9fd;
+  --text:#152033;
+  --muted:#647086;
+  --line:#dce3ee;
+  --accent:#4263eb;
+  --accent2:#6941c6;
+  --shadow:0 18px 50px rgba(30,50,90,.12);
+}
+
+html[data-theme="dark"] body,
+body.dark{
+  --bg:#0b1020;
+  --panel:#11182a;
+  --card:#172138;
+  --card2:#1b2740;
+  --text:#eef3ff;
+  --muted:#93a0b8;
+  --line:#293650;
+  --accent:#5b7cff;
+  --accent2:#7b61ff;
+  --success:#31c48d;
+  --warning:#f4b740;
+  --danger:#ef5b67;
+  --shadow:0 24px 70px rgba(0,0,0,.32);
+}
+
+html,body{
+  transition:background-color .2s ease,color .2s ease;
+}
+
+.login-card,
+.brand-panel,
+.proctor-brand,
+.proctor-card,
+.benefit-item,
+.icon-btn,
+input,
+select,
+textarea{
+  transition:background-color .2s ease,border-color .2s ease,color .2s ease,box-shadow .2s ease;
+}
+
+.icon-btn:hover{
+  border-color:var(--accent);
+  color:var(--accent);
+  transform:translateY(-1px);
+}
+
+.login-error-shake{
+  animation:loginShake .28s ease-in-out;
+}
+
+@keyframes loginShake{
+  0%,100%{transform:translateX(0)}
+  25%{transform:translateX(-5px)}
+  50%{transform:translateX(5px)}
+  75%{transform:translateX(-3px)}
+}
+
+/* Make the admin dashboard unmistakably visible after login. */
+#admin-view:not([hidden]),
+#examiner-view:not([hidden]){
+  min-height:100vh;
+  background:var(--bg);
+}
+
+#admin-dashboard-page.active,
+#examiner-dashboard-page.active{
+  display:block;
+  min-height:300px;
+}
