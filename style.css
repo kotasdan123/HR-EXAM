@@ -21,3 +21,24 @@
 @media(max-width:1100px){.stat-grid{grid-template-columns:repeat(3,1fr)}.exam-grid{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}.login-shell{grid-template-columns:1fr}.brand-panel{display:none}}
 @media(max-width:800px){.app-view{display:block}.sidebar{transform:translateX(-100%);transition:.2s}.sidebar.open{transform:none}.main-area{margin-left:0}.mobile-menu{display:block;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;width:38px;height:38px}.topbar{padding:0 16px;gap:10px}.topbar>div:first-of-type{margin-right:auto}.clock{display:none}.page-content{padding:18px}.stat-grid{grid-template-columns:repeat(2,1fr)}.exam-grid{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.field.full-span{grid-column:auto}.exam-header{height:auto;min-height:78px;padding:13px;flex-wrap:wrap}.exam-metrics{gap:10px;flex-wrap:wrap}.exam-body{height:calc(100vh - 112px);padding:8px}.result-card{padding:28px}.login-shell{padding:20px}.login-card{padding:25px}.brand-panel{padding:0}.kpi-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:500px){.stat-grid,.quick-grid,.result-details,.radio-grid{grid-template-columns:1fr}.page-head{align-items:flex-start;flex-direction:column}.topbar h2{font-size:18px}.exam-title{max-width:45%}.exam-title strong{font-size:13px}.metric{min-width:65px}.submit-btn{padding:8px 10px;font-size:11px}}
+
+
+/* Proctor+ login redesign */
+.proctor-login{grid-template-columns:minmax(0,1.1fr) minmax(360px,.65fr);gap:55px;max-width:1250px}
+.proctor-brand{padding:40px 25px 40px 20px}
+.proctor-logo{width:58px;height:58px;border-radius:18px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;color:#fff;font-size:32px;font-weight:900;box-shadow:0 16px 35px rgba(91,124,255,.28);margin-bottom:28px}
+.proctor-logo span{transform:translateY(-1px)}
+.proctor-brand h1{font-size:clamp(58px,7vw,92px);letter-spacing:-4px;margin:12px 0 8px;font-weight:900}
+.proctor-brand h1 span{color:var(--accent)}
+.proctor-tagline{font-size:19px!important;max-width:620px!important;margin-bottom:34px!important}
+.proctor-benefits{display:grid;gap:16px;max-width:650px}
+.benefit-item{display:flex;align-items:flex-start;gap:14px;padding:15px 17px;border:1px solid var(--line);background:rgba(255,255,255,.025);border-radius:15px}
+.benefit-icon{width:38px;height:38px;flex:0 0 38px;border-radius:11px;background:var(--card2);display:grid;place-items:center;color:var(--accent);font-weight:900}
+.benefit-item strong{display:block;margin-bottom:3px}
+.benefit-item span{display:block;color:var(--muted);font-size:13px;line-height:1.5}
+.proctor-card{padding:40px;min-height:470px;display:flex;flex-direction:column;justify-content:center}
+.login-warning{padding:11px 13px;border:1px solid rgba(239,91,103,.35);background:rgba(239,91,103,.09);border-radius:10px}
+.login-security-note{display:flex;gap:9px;align-items:center;margin-top:22px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.45}
+.security-dot{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px rgba(49,196,141,.12);flex:0 0 8px}
+@media(max-width:1100px){.proctor-login{grid-template-columns:1fr;gap:10px}.proctor-brand{display:block;padding:30px 20px 10px}.proctor-brand h1{font-size:64px}.proctor-benefits{grid-template-columns:repeat(3,1fr);max-width:none}.proctor-card{min-height:auto}}
+@media(max-width:700px){.proctor-brand{padding:20px 5px 5px}.proctor-brand h1{font-size:54px;letter-spacing:-3px}.proctor-benefits{grid-template-columns:1fr}.proctor-card{padding:28px 22px}.proctor-tagline{font-size:16px!important}}
