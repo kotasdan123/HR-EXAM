@@ -1,11 +1,6 @@
 /* Secure Exam Portal - frontend prototype
-   Builds on the original client-side proctoring approach. Because this is a
-   browser-only app, authentication, passwords, attempt locks and logs are
-   stored in localStorage and are NOT secure enough for production. A real
-   deployment should move auth, exam data, attempts and violation records to
-   a server/database. Google Forms remain cross-origin, so this app cannot
-   detect the actual Google Forms Submit click; the portal Submit button is
-   the auditable end-of-session signal.
+   Browser-only prototype. Authentication, passwords, attempts and logs
+   are stored in localStorage/sessionStorage and are NOT production-secure.
 */
 (() => {
 'use strict';
@@ -13,8 +8,8 @@
 const KEY='secure_exam_portal_v2';
 const SESSION='secure_exam_session_v2';
 
-const DEFAULT_FORM=
-  'https://docs.google.com/forms/d/e/1FAIpQLSf_PLACEHOLDER_FORM_ID/viewform?embedded=true';
+const DEFAULT_FORM =
+'https://docs.google.com/forms/d/e/1FAIpQLSf_PLACEHOLDER_FORM_ID/viewform?embedded=true';
 
 const seed={
  users:[
@@ -121,7 +116,9 @@ function safeRemove(storage,key){
 }
 
 function uid(prefix='id'){
- return prefix+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
+ return prefix+'-'+
+  Date.now().toString(36)+'-'+
+  Math.random().toString(36).slice(2,8);
 }
 
 function esc(v=''){
@@ -159,6 +156,7 @@ function fmtTime(ts){
 }
 
 function showView(name){
+
  Object.values(views).forEach(v=>{
   if(v)v.hidden=true;
  });
@@ -171,6 +169,7 @@ function showView(name){
 }
 
 function toast(msg,type=''){
+
  const container=$('#toast-container');
 
  if(!container){
@@ -204,11 +203,13 @@ function loadDB(){
   const raw=safeGet(localStorage,KEY);
 
   if(raw){
+
    try{
     x=JSON.parse(raw)||{};
    }catch(e){
     x={};
    }
+
   }
 
  }catch(e){
@@ -216,26 +217,31 @@ function loadDB(){
  }
 
 
- const users=Array.isArray(x.users)?x.users:[];
+ const users=
+  Array.isArray(x.users)
+   ?x.users
+   :[];
 
 
  /*
   Always repair the built-in demo accounts.
-  This prevents the default credentials from disappearing
-  after localStorage is modified or partially corrupted.
  */
-
  seed.users.forEach(su=>{
 
   const existing=users.find(
-   u=>String(u?.username||'')
-    .trim()
-    .toLowerCase()===su.username.toLowerCase()
+   u=>
+    String(u?.username||'')
+     .trim()
+     .toLowerCase()===
+    su.username.toLowerCase()
   );
+
 
   if(!existing){
 
-   users.push(clone(su));
+   users.push(
+    clone(su)
+   );
 
   }else if(
    su.username==='admin' ||
@@ -281,14 +287,99 @@ function loadDB(){
 
 
  /*
-  Always keep at least one valid exam.
+  Always keep at least one exam.
  */
  if(
   !Array.isArray(repaired.exams) ||
   !repaired.exams.length
  ){
-  repaired.exams=clone(seed.exams);
+
+  repaired.exams=
+   clone(seed.exams);
+
  }
+
+
+ /*
+  IMPORTANT:
+  Automatically create/repair examiner accounts
+  based on every exam's examinerUsername/password.
+ */
+ repaired.exams.forEach(exam=>{
+
+  const username=
+   String(
+    exam.examinerUsername||''
+   ).trim();
+
+  if(!username)return;
+
+
+  const normalized=
+   username.toLowerCase();
+
+
+  let account=
+   repaired.users.find(
+    u=>
+     String(u.username||'')
+      .trim()
+      .toLowerCase()===
+     normalized
+   );
+
+
+  if(!account){
+
+   account={
+
+    id:uid('user'),
+
+    username:username,
+
+    password:
+     String(
+      exam.examinerPassword||''
+     ),
+
+    role:'examiner',
+
+    name:username
+
+   };
+
+   repaired.users.push(account);
+
+  }else if(
+   account.role!=='admin'
+  ){
+
+   account.username=username;
+
+   /*
+    Keep the examiner password synchronized
+    with the exam configuration.
+   */
+   if(
+    exam.examinerPassword!==undefined &&
+    exam.examinerPassword!==null &&
+    String(exam.examinerPassword)!==''
+   ){
+
+    account.password=
+     String(exam.examinerPassword);
+
+   }
+
+   account.role='examiner';
+
+   if(!account.name){
+    account.name=username;
+   }
+
+  }
+
+ });
 
 
  safeSet(
@@ -301,11 +392,13 @@ function loadDB(){
 }
 
 function saveDB(){
+
  safeSet(
   localStorage,
   KEY,
   JSON.stringify(db)
  );
+
 }
 
 function loadSession(){
@@ -313,7 +406,10 @@ function loadSession(){
  try{
 
   return JSON.parse(
-   safeGet(sessionStorage,SESSION)||'null'
+   safeGet(
+    sessionStorage,
+    SESSION
+   )||'null'
   );
 
  }catch(e){
@@ -321,6 +417,7 @@ function loadSession(){
   return null;
 
  }
+
 }
 
 function saveSession(){
@@ -351,10 +448,15 @@ function saveSession(){
 
 function applyTheme(){
 
- const light=db.theme==='light';
+ const light=
+  db.theme==='light';
+
 
  document.documentElement.dataset.theme=
-  light?'light':'dark';
+  light
+   ?'light'
+   :'dark';
+
 
  document.body.classList.toggle(
   'light',
@@ -449,12 +551,20 @@ function handleLogin(e){
  clearLoginError();
 
 
- const usernameEl=$('#login-username');
- const passwordEl=$('#login-password');
- const form=$('#login-form');
+ const usernameEl=
+  $('#login-username');
+
+ const passwordEl=
+  $('#login-password');
+
+ const form=
+  $('#login-form');
 
 
- if(!usernameEl||!passwordEl){
+ if(
+  !usernameEl ||
+  !passwordEl
+ ){
 
   showLoginError(
    'Login form could not be loaded. Please refresh the page.'
@@ -466,19 +576,31 @@ function handleLogin(e){
 
 
  const username=
-  String(usernameEl.value||'').trim();
+  String(
+   usernameEl.value||''
+  ).trim();
+
 
  const password=
-  String(passwordEl.value||'');
+  String(
+   passwordEl.value||''
+  );
 
 
- if(!username||!password){
+ if(
+  !username ||
+  !password
+ ){
 
   showLoginError(
    'Please enter both your username and password.'
   );
 
-  (!username?usernameEl:passwordEl).focus();
+  (
+   !username
+    ?usernameEl
+    :passwordEl
+  ).focus();
 
   return false;
 
@@ -486,13 +608,14 @@ function handleLogin(e){
 
 
  /*
-  Refresh database before checking credentials.
+  Reload database so newly created examiner
+  accounts are immediately available.
  */
  db=loadDB();
 
 
  /*
-  Built-in credentials.
+  Built-in accounts.
  */
  const fallback={
 
@@ -513,22 +636,26 @@ function handleLogin(e){
  };
 
 
- const key=username.toLowerCase();
+ const key=
+  username.toLowerCase();
 
 
- let user=db.users.find(u=>
+ let user=
+  db.users.find(
+   u=>
+    String(u?.username||'')
+     .trim()
+     .toLowerCase()===
+    key &&
 
-  String(u?.username||'')
-   .trim()
-   .toLowerCase()===key &&
-
-  String(u?.password??'')===password
-
- );
+    String(
+     u?.password??''
+    )===password
+  );
 
 
  /*
-  Final fallback if localStorage is somehow damaged.
+  Final fallback for built-in accounts.
  */
  if(
   !user &&
@@ -537,15 +664,25 @@ function handleLogin(e){
  ){
 
   user={
+
    id:fallback[key].id,
+
    username:key,
+
    password:password,
+
    role:fallback[key].role,
+
    name:fallback[key].name
+
   };
 
 
-  if(!db.users.some(u=>u.id===user.id)){
+  if(
+   !db.users.some(
+    u=>u.id===user.id
+   )
+  ){
 
    db.users.push(
     clone(user)
@@ -588,15 +725,19 @@ function handleLogin(e){
 
 
  session={
+
   userId:user.id,
+
   username:user.username,
+
   role:user.role,
+
   loginAt:Date.now()
+
  };
 
 
  saveSession();
-
 
  currentExam=null;
  examState=null;
@@ -612,11 +753,14 @@ function handleLogin(e){
 
 function initAuthentication(){
 
- const form=$('#login-form');
+ const form=
+  $('#login-form');
 
  if(!form)return;
 
- if(form.dataset.authBound==='1')return;
+ if(
+  form.dataset.authBound==='1'
+ )return;
 
  form.addEventListener(
   'submit',
@@ -630,6 +774,7 @@ function initAuthentication(){
 function currentUser(){
 
  if(!session)return null;
+
 
  return db.users.find(
   u=>u.id===session.userId
@@ -694,6 +839,7 @@ function logout(){
  examState=null;
 
  clearInterval(timer);
+
  timer=null;
 
  violationOverlayOpen=false;
@@ -733,44 +879,50 @@ function clearBrokenSession(){
 
 
 /* =========================================================
-   SIDEBAR / PAGE NAVIGATION
+   NAVIGATION
 ========================================================= */
 
-$$('[data-toggle-sidebar]').forEach(b=>{
+$$('[data-toggle-sidebar]').forEach(
+ b=>{
 
- b.addEventListener(
-  'click',
-  ()=>{
-   $('#'+b.dataset.toggleSidebar)
-    ?.classList.toggle('open');
-  }
- );
+  b.addEventListener(
+   'click',
+   ()=>{
+    $('#'+b.dataset.toggleSidebar)
+     ?.classList.toggle('open');
+   }
+  );
 
-});
-
-
-$$('[data-admin-page]').forEach(b=>{
-
- b.addEventListener(
-  'click',
-  ()=>adminPage(
-   b.dataset.adminPage
-  )
- );
-
-});
+ }
+);
 
 
-$$('[data-examiner-page]').forEach(b=>{
+$$('[data-admin-page]').forEach(
+ b=>{
 
- b.addEventListener(
-  'click',
-  ()=>examinerPage(
-   b.dataset.examinerPage
-  )
- );
+  b.addEventListener(
+   'click',
+   ()=>adminPage(
+    b.dataset.adminPage
+   )
+  );
 
-});
+ }
+);
+
+
+$$('[data-examiner-page]').forEach(
+ b=>{
+
+  b.addEventListener(
+   'click',
+   ()=>examinerPage(
+    b.dataset.examinerPage
+   )
+  );
+
+ }
+);
 
 
 const pageTitles={
@@ -805,7 +957,6 @@ function openAdmin(){
  $('#admin-avatar').textContent=
   (u.name||u.username)[0].toUpperCase();
 
-
  showView('admin');
 
  adminPage('dashboard');
@@ -821,24 +972,27 @@ function adminPage(page){
    :'dashboard';
 
 
- $$('[data-admin-page]').forEach(b=>{
+ $$('[data-admin-page]').forEach(
+  b=>{
 
-  b.classList.toggle(
-   'active',
-   b.dataset.adminPage===page
-  );
+   b.classList.toggle(
+    'active',
+    b.dataset.adminPage===page
+   );
 
- });
-
-
- $$('.admin-page').forEach(p=>{
-  p.classList.remove('active');
- });
-
-
- const target=$(
-  '#admin-'+page+'-page'
+  }
  );
+
+
+ $$('.admin-page').forEach(
+  p=>{
+   p.classList.remove('active');
+  }
+ );
+
+
+ const target=
+  $('#admin-'+page+'-page');
 
 
  if(target){
@@ -848,7 +1002,9 @@ function adminPage(page){
  }
 
 
- const title=$('#admin-page-title');
+ const title=
+  $('#admin-page-title');
+
 
  if(title){
 
@@ -856,10 +1012,6 @@ function adminPage(page){
    pageTitles[page]||'Dashboard';
 
  }
-
-
- $('#admin-sidebar')
-  ?.classList.remove('open');
 
 
  renderAdminPage(page);
@@ -872,13 +1024,19 @@ function renderAdminPage(page){
  const renderers={
 
   dashboard:renderAdminDashboard,
+
   exams:renderAdminExams,
+
   submissions:renderSubmissions,
+
   violations:renderViolations,
+
   analytics:renderAnalytics,
+
   settings:renderSettings
 
  };
+
 
  if(renderers[page]){
 
@@ -895,59 +1053,63 @@ function renderAdminPage(page){
 
 function renderAdminDashboard(){
 
- const el=$('#admin-dashboard-page');
+ const el=
+  $('#admin-dashboard-page');
 
  if(!el)return;
 
 
- const totalExams=db.exams.length;
+ const totalExams=
+  db.exams.length;
 
- const totalAttempts=db.attempts.length;
 
- const completed=db.attempts.filter(
-  a=>a.status==='Completed'
- ).length;
+ const totalAttempts=
+  db.attempts.length;
 
- const inProgress=db.attempts.filter(
-  a=>a.status==='In Progress'
- ).length;
 
- const terminated=db.attempts.filter(
-  a=>
-   a.status==='Terminated' ||
-   a.status==='Time Expired'
- ).length;
+ const completed=
+  db.attempts.filter(
+   a=>a.status==='Completed'
+  ).length;
 
- const totalViolations=db.violations.length;
+
+ const inProgress=
+  db.attempts.filter(
+   a=>a.status==='In Progress'
+  ).length;
+
+
+ const terminated=
+  db.attempts.filter(
+   a=>
+    a.status==='Terminated' ||
+    a.status==='Time Expired'
+  ).length;
+
+
+ const totalViolations=
+  db.violations.length;
 
 
  const completedPct=
   totalAttempts
    ?Math.round(
-     (completed/totalAttempts)*100
-    )
+    completed/
+    totalAttempts*
+    100
+   )
    :0;
 
 
- const violationPct=
-  totalAttempts
-   ?Math.min(
-     100,
-     Math.round(
-      (totalViolations/totalAttempts)*100
-     )
-    )
-   :0;
-
-
- const recent=db.attempts
-  .slice()
-  .sort(
-   (a,b)=>
-    (b.startedAt||0)-
-    (a.startedAt||0)
-  )
-  .slice(0,6);
+ const recent=
+  db.attempts
+   .slice()
+   .sort(
+    (a,b)=>
+     (b.startedAt||0)-
+     (a.startedAt||0)
+   )
+   .slice(0,6);
 
 
  el.innerHTML=`
@@ -955,27 +1117,70 @@ function renderAdminDashboard(){
  <div class="stats-grid">
 
   <div class="stat-card">
-   <span class="stat-label">Total Exams</span>
-   <strong>${totalExams}</strong>
-   <small>Configured examinations</small>
+
+   <span class="stat-label">
+    Total Exams
+   </span>
+
+   <strong>
+    ${totalExams}
+   </strong>
+
+   <small>
+    Configured examinations
+   </small>
+
   </div>
 
-  <div class="stat-card">
-   <span class="stat-label">Total Submissions</span>
-   <strong>${totalAttempts}</strong>
-   <small>All recorded attempts</small>
-  </div>
 
   <div class="stat-card">
-   <span class="stat-label">Completed</span>
-   <strong>${completed}</strong>
-   <small>${completedPct}% completion rate</small>
+
+   <span class="stat-label">
+    Total Submissions
+   </span>
+
+   <strong>
+    ${totalAttempts}
+   </strong>
+
+   <small>
+    All recorded attempts
+   </small>
+
   </div>
 
+
   <div class="stat-card">
-   <span class="stat-label">Violations</span>
-   <strong>${totalViolations}</strong>
-   <small>${violationPct}% per recorded attempt</small>
+
+   <span class="stat-label">
+    Completed
+   </span>
+
+   <strong>
+    ${completed}
+   </strong>
+
+   <small>
+    ${completedPct}% completion rate
+   </small>
+
+  </div>
+
+
+  <div class="stat-card">
+
+   <span class="stat-label">
+    Violations
+   </span>
+
+   <strong>
+    ${totalViolations}
+   </strong>
+
+   <small>
+    Recorded security events
+   </small>
+
   </div>
 
  </div>
@@ -986,59 +1191,112 @@ function renderAdminDashboard(){
   <section class="panel">
 
    <div class="panel-header">
+
     <div>
-     <h3>Submission Progress</h3>
-     <p>Current examination activity.</p>
+
+     <h3>
+      Submission Progress
+     </h3>
+
+     <p>
+      Current examination activity.
+     </p>
+
     </div>
+
    </div>
+
 
    <div class="progress-summary">
 
     <div class="progress-item">
+
      <div class="progress-meta">
-      <span>Completed</span>
-      <strong>${completed}</strong>
+
+      <span>
+       Completed
+      </span>
+
+      <strong>
+       ${completed}
+      </strong>
+
      </div>
 
      <div class="progress-track">
-      <span style="width:${completedPct}%"></span>
+
+      <span
+       style="width:${completedPct}%">
+      </span>
+
      </div>
+
     </div>
 
 
     <div class="progress-item">
+
      <div class="progress-meta">
-      <span>In Progress</span>
-      <strong>${inProgress}</strong>
+
+      <span>
+       In Progress
+      </span>
+
+      <strong>
+       ${inProgress}
+      </strong>
+
      </div>
 
      <div class="progress-track">
-      <span style="width:${
-       totalAttempts
-        ?Math.round(
-          (inProgress/totalAttempts)*100
+
+      <span
+       style="width:${
+        totalAttempts
+         ?Math.round(
+          inProgress/
+          totalAttempts*
+          100
          )
-        :0
-      }%"></span>
+         :0
+       }%">
+      </span>
+
      </div>
+
     </div>
 
 
     <div class="progress-item">
+
      <div class="progress-meta">
-      <span>Terminated / Expired</span>
-      <strong>${terminated}</strong>
+
+      <span>
+       Terminated / Expired
+      </span>
+
+      <strong>
+       ${terminated}
+      </strong>
+
      </div>
 
      <div class="progress-track">
-      <span style="width:${
-       totalAttempts
-        ?Math.round(
-          (terminated/totalAttempts)*100
+
+      <span
+       style="width:${
+        totalAttempts
+         ?Math.round(
+          terminated/
+          totalAttempts*
+          100
          )
-        :0
-      }%"></span>
+         :0
+       }%">
+      </span>
+
      </div>
+
     </div>
 
    </div>
@@ -1049,9 +1307,17 @@ function renderAdminDashboard(){
   <section class="panel">
 
    <div class="panel-header">
+
     <div>
-     <h3>Recent Submissions</h3>
-     <p>Latest examiner activity.</p>
+
+     <h3>
+      Recent Submissions
+     </h3>
+
+     <p>
+      Latest examiner activity.
+     </p>
+
     </div>
 
     <button
@@ -1059,6 +1325,7 @@ function renderAdminDashboard(){
      data-action="view-submissions">
      View All
     </button>
+
    </div>
 
 
@@ -1067,44 +1334,67 @@ function renderAdminDashboard(){
     <table>
 
      <thead>
+
       <tr>
        <th>Exam</th>
        <th>Examiner</th>
        <th>Status</th>
        <th>Date</th>
       </tr>
+
      </thead>
+
 
      <tbody>
 
       ${
        recent.length
-       ?recent.map(a=>`
+        ?recent.map(a=>`
 
-        <tr>
+         <tr>
 
-         <td>${esc(a.examTitle)}</td>
+          <td>
+           ${esc(a.examTitle)}
+          </td>
 
-         <td>${esc(a.username)}</td>
+          <td>
+           ${esc(a.username)}
+          </td>
 
-         <td>
-          <span class="status-pill ${statusClass(a.status)}">
-           ${esc(a.status)}
-          </span>
-         </td>
+          <td>
 
-         <td>${fmtDate(a.startedAt)}</td>
+           <span class="status-pill ${
+            statusClass(a.status)
+           }">
 
-        </tr>
+            ${esc(a.status)}
 
-       `).join('')
-       :`
-        <tr>
-         <td colspan="4" class="empty-cell">
-          No submissions yet.
-         </td>
-        </tr>
-       `
+           </span>
+
+          </td>
+
+          <td>
+           ${fmtDate(a.startedAt)}
+          </td>
+
+         </tr>
+
+        `).join('')
+        :`
+
+         <tr>
+
+          <td
+           colspan="4"
+           class="empty-cell">
+
+           No submissions yet.
+
+          </td>
+
+         </tr>
+
+        `
       }
 
      </tbody>
@@ -1123,8 +1413,15 @@ function renderAdminDashboard(){
   <div class="panel-header">
 
    <div>
-    <h3>Exam Overview</h3>
-    <p>Current exam configuration.</p>
+
+    <h3>
+     Exam Overview
+    </h3>
+
+    <p>
+     Current exam configuration.
+    </p>
+
    </div>
 
    <button
@@ -1140,53 +1437,81 @@ function renderAdminDashboard(){
 
    ${
     db.exams.length
-    ?db.exams.map(e=>`
+     ?db.exams.map(e=>`
 
-     <div class="exam-mini-card">
+      <div class="exam-mini-card">
 
-      <div class="exam-mini-top">
+       <div class="exam-mini-top">
 
-       <div>
-        <span class="eyebrow">EXAM</span>
-        <h4>${esc(e.title)}</h4>
+        <div>
+
+         <span class="eyebrow">
+          EXAM
+         </span>
+
+         <h4>
+          ${esc(e.title)}
+         </h4>
+
+        </div>
+
+        <span class="status-pill ${
+         e.active
+          ?'status-success'
+          :'status-muted'
+        }">
+
+         ${e.active?'Active':'Inactive'}
+
+        </span>
+
        </div>
 
-       <span class="status-pill ${
-        e.active?'status-success':'status-muted'
-       }">
-        ${e.active?'Active':'Inactive'}
-       </span>
+
+       <p>
+        ${esc(
+         e.description||
+         'No description.'
+        )}
+       </p>
+
+
+       <div class="mini-meta">
+
+        <span>
+         ${
+          normalizeBoolean(e.timerEnabled)
+           ?`${normalizeDuration(e.durationMinutes)} min`
+           :'No Timer'
+         }
+        </span>
+
+        <span>
+         ${
+          normalizeBoolean(e.antiCheat)
+           ?'Anti-cheat On'
+           :'Anti-cheat Off'
+         }
+        </span>
+
+        <span>
+         ${esc(
+          e.examinerUsername||'—'
+         )}
+        </span>
+
+       </div>
 
       </div>
 
-      <p>${esc(e.description||'No description.')}</p>
+     `).join('')
+     :`
 
-      <div class="mini-meta">
-       <span>
-        ${e.timerEnabled
-         ?`${e.durationMinutes} min`
-         :'No Timer'}
-       </span>
-
-       <span>
-        ${e.antiCheat
-         ?'Anti-cheat On'
-         :'Anti-cheat Off'}
-       </span>
-
-       <span>
-        ${esc(e.examinerUsername||'—')}
-       </span>
+      <div class="empty-state">
+       No examinations configured.
       </div>
 
-     </div>
-
-    `).join('')
-    :`
-     <div class="empty-state">
-      No examinations configured.
-     </div>
-    `
+     `
    }
 
   </div>
@@ -1201,43 +1526,101 @@ function renderAdminDashboard(){
 
 
 /* =========================================================
+   BOOLEAN / NUMBER NORMALIZATION
+========================================================= */
+
+function normalizeBoolean(value){
+
+ if(
+  value===true ||
+  value===1 ||
+  value==='1' ||
+  String(value).toLowerCase()==='true' ||
+  String(value).toLowerCase()==='on' ||
+  String(value).toLowerCase()==='yes'
+ ){
+
+  return true;
+
+ }
+
+ return false;
+
+}
+
+function normalizeDuration(value){
+
+ const n=
+  Number(value);
+
+ if(
+  Number.isFinite(n) &&
+  n>0
+ ){
+
+  return Math.max(
+   1,
+   Math.round(n)
+  );
+
+ }
+
+ return 60;
+
+}
+
+
+/* =========================================================
    EXAM MANAGEMENT
 ========================================================= */
 
 function renderAdminExams(){
 
- const el=$('#admin-exams-page');
+ const el=
+  $('#admin-exams-page');
 
  if(!el)return;
 
 
  const maxExams=6;
 
+
  el.innerHTML=`
 
  <div class="page-heading-row">
 
   <div>
-   <h2>Exam Management</h2>
+
+   <h2>
+    Exam Management
+   </h2>
+
    <p>
     Create and manage examinations, Google Forms,
     examiner access, timers and anti-cheat settings.
    </p>
+
   </div>
+
 
   <button
    class="primary-btn"
    data-action="new-exam"
    ${db.exams.length>=maxExams?'disabled':''}>
+
    + Add Examination
+
   </button>
 
  </div>
 
 
  <div class="capacity-note">
-  ${db.exams.length} / ${maxExams} examination slots used.
+
+  ${db.exams.length} / ${maxExams}
+  examination slots used.
   Deleted exams free a slot.
+
  </div>
 
 
@@ -1245,130 +1628,200 @@ function renderAdminExams(){
 
  ${
   db.exams.length
-  ?db.exams.map(e=>{
+   ?db.exams.map(e=>{
 
-   const attemptCount=
-    db.attempts.filter(
-     a=>a.examId===e.id
-    ).length;
-
-   return `
-
-    <article class="exam-management-card">
-
-     <div class="exam-card-header">
-
-      <div>
-
-       <span class="eyebrow">EXAMINATION</span>
-
-       <h3>${esc(e.title)}</h3>
-
-      </div>
-
-      <span class="status-pill ${
-       e.active
-        ?'status-success'
-        :'status-muted'
-      }">
-       ${e.active?'Active':'Inactive'}
-      </span>
-
-     </div>
+    const attemptCount=
+     db.attempts.filter(
+      a=>a.examId===e.id
+     ).length;
 
 
-     <p class="exam-description">
-      ${esc(
-       e.description||
-       'No description provided.'
-      )}
-     </p>
+    return `
+
+     <article
+      class="exam-management-card">
+
+      <div class="exam-card-header">
+
+       <div>
+
+        <span class="eyebrow">
+         EXAMINATION
+        </span>
+
+        <h3>
+         ${esc(e.title)}
+        </h3>
+
+       </div>
 
 
-     <div class="exam-detail-grid">
+       <span class="status-pill ${
+        normalizeBoolean(e.active)
+         ?'status-success'
+         :'status-muted'
+       }">
 
-      <div>
-       <span>Examiner</span>
-       <strong>${esc(e.examinerUsername||'—')}</strong>
-      </div>
-
-      <div>
-       <span>Attempts</span>
-       <strong>${attemptCount}</strong>
-      </div>
-
-      <div>
-       <span>Timer</span>
-       <strong>
         ${
-         e.timerEnabled
-          ?`${e.durationMinutes} min`
-          :'Off'
+         normalizeBoolean(e.active)
+          ?'Active'
+          :'Inactive'
         }
-       </strong>
+
+       </span>
+
       </div>
 
-      <div>
-       <span>Anti-Cheat</span>
-       <strong>
-        ${e.antiCheat?'Enabled':'Disabled'}
-       </strong>
+
+      <p class="exam-description">
+
+       ${esc(
+        e.description||
+        'No description provided.'
+       )}
+
+      </p>
+
+
+      <div class="exam-detail-grid">
+
+       <div>
+
+        <span>
+         Examiner
+        </span>
+
+        <strong>
+         ${esc(
+          e.examinerUsername||'—'
+         )}
+        </strong>
+
+       </div>
+
+
+       <div>
+
+        <span>
+         Attempts
+        </span>
+
+        <strong>
+         ${attemptCount}
+        </strong>
+
+       </div>
+
+
+       <div>
+
+        <span>
+         Timer
+        </span>
+
+        <strong>
+
+         ${
+          normalizeBoolean(e.timerEnabled)
+           ?`${normalizeDuration(e.durationMinutes)} min`
+           :'Off'
+         }
+
+        </strong>
+
+       </div>
+
+
+       <div>
+
+        <span>
+         Anti-Cheat
+        </span>
+
+        <strong>
+
+         ${
+          normalizeBoolean(e.antiCheat)
+           ?'Enabled'
+           :'Disabled'
+         }
+
+        </strong>
+
+       </div>
+
       </div>
 
-     </div>
+
+      <div class="exam-schedule">
+
+       <div>
+
+        <span>
+         Available From
+        </span>
+
+        <strong>
+         ${
+          e.startAt
+           ?fmtDate(e.startAt)
+           :'Immediately'
+         }
+        </strong>
+
+       </div>
 
 
-     <div class="exam-schedule">
+       <div>
 
-      <div>
-       <span>Available From</span>
-       <strong>
-        ${e.startAt
-         ?fmtDate(e.startAt)
-         :'Immediately'}
-       </strong>
+        <span>
+         Available Until
+        </span>
+
+        <strong>
+         ${
+          e.endAt
+           ?fmtDate(e.endAt)
+           :'No End Date'
+         }
+        </strong>
+
+       </div>
+
       </div>
 
-      <div>
-       <span>Available Until</span>
-       <strong>
-        ${e.endAt
-         ?fmtDate(e.endAt)
-         :'No End Date'}
-       </strong>
+
+      <div class="exam-card-actions">
+
+       <button
+        class="secondary-btn"
+        data-action="edit-exam"
+        data-id="${e.id}">
+        Edit
+       </button>
+
+
+       <button
+        class="danger-btn"
+        data-action="delete-exam"
+        data-id="${e.id}">
+        Delete
+       </button>
+
       </div>
 
-     </div>
+     </article>
 
+    `;
 
-     <div class="exam-card-actions">
+   }).join('')
+   :`
 
-      <button
-       class="secondary-btn"
-       data-action="edit-exam"
-       data-id="${e.id}">
-       Edit
-      </button>
+    <div class="empty-state">
+     No examinations available.
+    </div>
 
-      <button
-       class="danger-btn"
-       data-action="delete-exam"
-       data-id="${e.id}">
-       Delete
-      </button>
-
-     </div>
-
-    </article>
-
-   `;
-
-  }).join('')
-  :`
-   <div class="empty-state">
-    No examinations available.
-   </div>
-  `
+   `
  }
 
  </div>
@@ -1388,10 +1841,15 @@ function openExamModal(id=''){
 
  const existing=
   id
-   ?db.exams.find(e=>e.id===id)
+   ?db.exams.find(
+     e=>e.id===id
+    )
    :null;
 
- const isEdit=!!existing;
+
+ const isEdit=
+  !!existing;
+
 
  if(
   !isEdit &&
@@ -1408,26 +1866,41 @@ function openExamModal(id=''){
  }
 
 
- const e=existing||{
+ const e=
+  existing||
+  {
 
-  id:'',
-  title:'',
-  description:'',
-  formUrl:'',
-  examinerUsername:'',
-  examinerPassword:'',
-  antiCheat:true,
-  maxViolations:3,
-  timerEnabled:true,
-  durationMinutes:60,
-  startAt:'',
-  endAt:'',
-  active:true
+   id:'',
 
- };
+   title:'',
+
+   description:'',
+
+   formUrl:'',
+
+   examinerUsername:'',
+
+   examinerPassword:'',
+
+   antiCheat:true,
+
+   maxViolations:3,
+
+   timerEnabled:true,
+
+   durationMinutes:60,
+
+   startAt:'',
+
+   endAt:'',
+
+   active:true
+
+  };
 
 
- const root=$('#modal-root');
+ const root=
+  $('#modal-root');
 
  if(!root)return;
 
@@ -1444,16 +1917,30 @@ function openExamModal(id=''){
    <div class="modal-header">
 
     <div>
+
      <span class="eyebrow">
-      ${isEdit?'EDIT EXAMINATION':'NEW EXAMINATION'}
+
+      ${
+       isEdit
+        ?'EDIT EXAMINATION'
+        :'NEW EXAMINATION'
+      }
+
      </span>
 
+
      <h2>
-      ${isEdit
-       ?'Edit Examination'
-       :'Create Examination'}
+
+      ${
+       isEdit
+        ?'Edit Examination'
+        :'Create Examination'
+      }
+
      </h2>
+
     </div>
+
 
     <button
      class="icon-btn"
@@ -1473,7 +1960,9 @@ function openExamModal(id=''){
 
      <div class="field-full">
 
-      <label>Exam Title</label>
+      <label>
+       Exam Title
+      </label>
 
       <input
        id="exam-title"
@@ -1487,7 +1976,9 @@ function openExamModal(id=''){
 
      <div class="field-full">
 
-      <label>Description</label>
+      <label>
+       Description
+      </label>
 
       <textarea
        id="exam-description"
@@ -1499,7 +1990,9 @@ function openExamModal(id=''){
 
      <div class="field-full">
 
-      <label>Google Form URL</label>
+      <label>
+       Google Form URL
+      </label>
 
       <input
        id="exam-form-url"
@@ -1517,7 +2010,9 @@ function openExamModal(id=''){
 
      <div>
 
-      <label>Examiner Username</label>
+      <label>
+       Examiner Username
+      </label>
 
       <input
        id="examiner-username"
@@ -1531,7 +2026,9 @@ function openExamModal(id=''){
 
      <div>
 
-      <label>Examiner Password</label>
+      <label>
+       Examiner Password
+      </label>
 
       <input
        id="examiner-password"
@@ -1545,7 +2042,9 @@ function openExamModal(id=''){
 
      <div>
 
-      <label>Availability Start</label>
+      <label>
+       Availability Start
+      </label>
 
       <input
        id="exam-start"
@@ -1557,7 +2056,9 @@ function openExamModal(id=''){
 
      <div>
 
-      <label>Availability End</label>
+      <label>
+       Availability End
+      </label>
 
       <input
        id="exam-end"
@@ -1574,9 +2075,15 @@ function openExamModal(id=''){
        <input
         id="exam-active"
         type="checkbox"
-        ${e.active!==false?'checked':''}>
+        ${
+         normalizeBoolean(e.active)
+          ?'checked'
+          :''
+        }>
 
-       <span>Exam is Active</span>
+       <span>
+        Exam is Active
+       </span>
 
       </label>
 
@@ -1590,9 +2097,15 @@ function openExamModal(id=''){
        <input
         id="exam-timer"
         type="checkbox"
-        ${e.timerEnabled?'checked':''}>
+        ${
+         normalizeBoolean(e.timerEnabled)
+          ?'checked'
+          :''
+        }>
 
-       <span>Enable Timer</span>
+       <span>
+        Enable Timer
+       </span>
 
       </label>
 
@@ -1601,14 +2114,16 @@ function openExamModal(id=''){
 
      <div>
 
-      <label>Duration in Minutes</label>
+      <label>
+       Duration in Minutes
+      </label>
 
       <input
        id="exam-duration"
        type="number"
        min="1"
        max="600"
-       value="${Number(e.durationMinutes)||60}">
+       value="${normalizeDuration(e.durationMinutes)}">
 
      </div>
 
@@ -1620,9 +2135,15 @@ function openExamModal(id=''){
        <input
         id="exam-anticheat"
         type="checkbox"
-        ${e.antiCheat?'checked':''}>
+        ${
+         normalizeBoolean(e.antiCheat)
+          ?'checked'
+          :''
+        }>
 
-       <span>Enable Anti-Cheat</span>
+       <span>
+        Enable Anti-Cheat
+       </span>
 
       </label>
 
@@ -1631,14 +2152,21 @@ function openExamModal(id=''){
 
      <div>
 
-      <label>Maximum Violations</label>
+      <label>
+       Maximum Violations
+      </label>
 
       <input
        id="exam-max-violations"
        type="number"
        min="1"
        max="20"
-       value="${Number(e.maxViolations)||3}">
+       value="${
+        Math.max(
+         1,
+         Number(e.maxViolations)||3
+        )
+       }">
 
      </div>
 
@@ -1658,13 +2186,22 @@ function openExamModal(id=''){
       class="secondary-btn"
       data-action="close-modal"
       type="button">
+
       Cancel
+
      </button>
+
 
      <button
       class="primary-btn"
       type="submit">
-      ${isEdit?'Save Changes':'Create Examination'}
+
+      ${
+       isEdit
+        ?'Save Changes'
+        :'Create Examination'
+      }
+
      </button>
 
     </div>
@@ -1678,11 +2215,61 @@ function openExamModal(id=''){
  `;
 
 
+ /*
+  IMPORTANT:
+  Prevent the checkbox values from being
+  stored incorrectly.
+ */
+ const timerCheckbox=
+  $('#exam-timer');
+
+ const durationInput=
+  $('#exam-duration');
+
+
+ function updateTimerInput(){
+
+  if(!timerCheckbox||!durationInput)return;
+
+  durationInput.disabled=
+   !timerCheckbox.checked;
+
+  if(
+   timerCheckbox.checked &&
+   (
+    !durationInput.value ||
+    Number(durationInput.value)<=0
+   )
+  ){
+
+   durationInput.value='60';
+
+  }
+
+ }
+
+
+ timerCheckbox?.addEventListener(
+  'change',
+  updateTimerInput
+ );
+
+
+ updateTimerInput();
+
+
  $('#exam-form')?.addEventListener(
   'submit',
   event=>{
+
    event.preventDefault();
-   saveExam(isEdit?e.id:null);
+
+   saveExam(
+    isEdit
+     ?e.id
+     :null
+   );
+
   }
  );
 
@@ -1696,17 +2283,29 @@ function toLocalDateTime(value){
 
  if(!value)return '';
 
- const d=new Date(value);
+ const d=
+  new Date(value);
 
- if(Number.isNaN(d.getTime()))return '';
+ if(
+  Number.isNaN(
+   d.getTime()
+  )
+ )return '';
 
- const pad=n=>String(n).padStart(2,'0');
+
+ const pad=
+  n=>String(n).padStart(2,'0');
+
 
  return d.getFullYear()+
-  '-'+pad(d.getMonth()+1)+
-  '-'+pad(d.getDate())+
-  'T'+pad(d.getHours())+
-  ':'+pad(d.getMinutes());
+  '-'+
+  pad(d.getMonth()+1)+
+  '-'+
+  pad(d.getDate())+
+  'T'+
+  pad(d.getHours())+
+  ':'+
+  pad(d.getMinutes());
 
 }
 
@@ -1714,49 +2313,88 @@ function toLocalDateTime(value){
 function saveExam(id){
 
  const title=
-  String($('#exam-title')?.value||'').trim();
+  String(
+   $('#exam-title')?.value||''
+  ).trim();
+
 
  const description=
-  String($('#exam-description')?.value||'').trim();
+  String(
+   $('#exam-description')?.value||''
+  ).trim();
+
 
  const formUrl=
-  String($('#exam-form-url')?.value||'').trim();
+  String(
+   $('#exam-form-url')?.value||''
+  ).trim();
+
 
  const examinerUsername=
-  String($('#examiner-username')?.value||'').trim();
+  String(
+   $('#examiner-username')?.value||''
+  ).trim();
+
 
  const examinerPassword=
-  String($('#examiner-password')?.value||'').trim();
+  String(
+   $('#examiner-password')?.value||''
+  );
+
 
  const startRaw=
-  String($('#exam-start')?.value||'').trim();
+  String(
+   $('#exam-start')?.value||''
+  ).trim();
+
 
  const endRaw=
-  String($('#exam-end')?.value||'').trim();
+  String(
+   $('#exam-end')?.value||''
+  ).trim();
+
 
  const active=
   !!$('#exam-active')?.checked;
 
+
+ /*
+  IMPORTANT:
+  Read checkbox directly and convert it
+  to a real Boolean.
+ */
  const timerEnabled=
   !!$('#exam-timer')?.checked;
+
 
  const antiCheat=
   !!$('#exam-anticheat')?.checked;
 
+
+ /*
+  IMPORTANT:
+  Always store duration as a real number.
+ */
  const durationMinutes=
-  Math.max(
-   1,
-   Number($('#exam-duration')?.value)||60
+  normalizeDuration(
+   $('#exam-duration')?.value
   );
+
 
  const maxViolations=
   Math.max(
    1,
-   Number($('#exam-max-violations')?.value)||3
+   Math.min(
+    20,
+    Number(
+     $('#exam-max-violations')?.value
+    )||3
+   )
   );
 
 
- const error=$('#exam-form-error');
+ const error=
+  $('#exam-form-error');
 
 
  if(
@@ -1783,25 +2421,39 @@ function saveExam(id){
  let startAt='';
  let endAt='';
 
+
  if(startRaw){
 
-  const d=new Date(startRaw);
+  const d=
+   new Date(startRaw);
 
-  if(!Number.isNaN(d.getTime())){
+  if(
+   !Number.isNaN(
+    d.getTime()
+   )
+  ){
 
-   startAt=d.toISOString();
+   startAt=
+    d.toISOString();
 
   }
 
  }
 
+
  if(endRaw){
 
-  const d=new Date(endRaw);
+  const d=
+   new Date(endRaw);
 
-  if(!Number.isNaN(d.getTime())){
+  if(
+   !Number.isNaN(
+    d.getTime()
+   )
+  ){
 
-   endAt=d.toISOString();
+   endAt=
+    d.toISOString();
 
   }
 
@@ -1811,7 +2463,8 @@ function saveExam(id){
  if(
   startAt &&
   endAt &&
-  new Date(endAt)<=new Date(startAt)
+  new Date(endAt)<=
+  new Date(startAt)
  ){
 
   if(error){
@@ -1829,61 +2482,129 @@ function saveExam(id){
 
 
  /*
-  Create or update examiner account.
+  IMPORTANT:
+  Create or update the examiner account.
  */
- let examiner=db.users.find(
-  u=>
-   String(u.username||'').toLowerCase()===
-   examinerUsername.toLowerCase()
- );
+ let examiner=
+  db.users.find(
+   u=>
+    String(u.username||'')
+     .trim()
+     .toLowerCase()===
+    examinerUsername.toLowerCase()
+  );
 
 
  if(examiner){
 
-  if(examiner.role!=='admin'){
+  /*
+   Do not allow an admin account to be
+   overwritten by an exam configuration.
+  */
+  if(examiner.role==='admin'){
 
-   examiner.password=examinerPassword;
-   examiner.role='examiner';
+   if(error){
+
+    error.textContent=
+     'That username belongs to an administrator. Please use another examiner username.';
+
+    error.hidden=false;
+
+   }
+
+   return;
+
+  }
+
+
+  examiner.username=
+   examinerUsername;
+
+  examiner.password=
+   examinerPassword;
+
+  examiner.role=
+   'examiner';
+
+  if(!examiner.name){
+
+   examiner.name=
+    examinerUsername;
 
   }
 
  }else{
 
   examiner={
+
    id:uid('user'),
+
    username:examinerUsername,
+
    password:examinerPassword,
+
    role:'examiner',
+
    name:examinerUsername
+
   };
 
-  db.users.push(examiner);
+  db.users.push(
+   examiner
+  );
 
  }
 
 
+ /*
+  Save the normalized exam values.
+ */
+ const examData={
+
+  title,
+
+  description,
+
+  formUrl,
+
+  examinerUsername,
+
+  examinerPassword,
+
+  antiCheat,
+
+  maxViolations,
+
+  timerEnabled,
+
+  durationMinutes,
+
+  startAt,
+
+  endAt,
+
+  active
+
+ };
+
+
  if(id){
 
-  const existing=db.exams.find(
-   x=>x.id===id
-  );
+  const existing=
+   db.exams.find(
+    x=>x.id===id
+   );
+
 
   if(existing){
 
-   existing.title=title;
-   existing.description=description;
-   existing.formUrl=formUrl;
-   existing.examinerUsername=examinerUsername;
-   existing.examinerPassword=examinerPassword;
-   existing.antiCheat=antiCheat;
-   existing.maxViolations=maxViolations;
-   existing.timerEnabled=timerEnabled;
-   existing.durationMinutes=durationMinutes;
-   existing.startAt=startAt;
-   existing.endAt=endAt;
-   existing.active=active;
+   Object.assign(
+    existing,
+    examData
+   );
 
   }
+
 
   toast(
    'Examination updated successfully.',
@@ -1895,22 +2616,17 @@ function saveExam(id){
   db.exams.push({
 
    id:uid('exam'),
-   title,
-   description,
-   formUrl,
-   examinerUsername,
-   examinerPassword,
-   antiCheat,
-   maxViolations,
-   timerEnabled,
-   durationMinutes,
-   startAt,
-   endAt,
-   active,
+
+   ...examData,
+
    createdAt:Date.now(),
-   createdBy:currentUser()?.id||'u-admin'
+
+   createdBy:
+    currentUser()?.id||
+    'u-admin'
 
   });
+
 
   toast(
    'Examination created successfully.',
@@ -1920,7 +2636,17 @@ function saveExam(id){
  }
 
 
+ /*
+  Save everything together.
+ */
  saveDB();
+
+
+ /*
+  Reload and repair immediately.
+ */
+ db=loadDB();
+
 
  closeModal();
 
@@ -1943,7 +2669,11 @@ function deleteExam(id){
   !confirm(
    `Delete "${exam.title}"?\n\nThis will remove the examination configuration. Existing submission records will remain.`
   )
- )return;
+ ){
+
+  return;
+
+ }
 
 
  db.exams=
@@ -1954,10 +2684,12 @@ function deleteExam(id){
 
  saveDB();
 
+
  toast(
   'Examination deleted.',
   'success'
  );
+
 
  renderAdminExams();
 
@@ -1966,11 +2698,13 @@ function deleteExam(id){
 
 function closeModal(){
 
- const root=$('#modal-root');
+ const root=
+  $('#modal-root');
 
  if(root){
 
   root.hidden=true;
+
   root.innerHTML='';
 
  }
@@ -1984,18 +2718,20 @@ function closeModal(){
 
 function renderSubmissions(){
 
- const el=$('#admin-submissions-page');
+ const el=
+  $('#admin-submissions-page');
 
  if(!el)return;
 
 
- const attempts=db.attempts
-  .slice()
-  .sort(
-   (a,b)=>
-    (b.startedAt||0)-
-    (a.startedAt||0)
-  );
+ const attempts=
+  db.attempts
+   .slice()
+   .sort(
+    (a,b)=>
+     (b.startedAt||0)-
+     (a.startedAt||0)
+   );
 
 
  el.innerHTML=`
@@ -2003,8 +2739,15 @@ function renderSubmissions(){
  <div class="page-heading-row">
 
   <div>
-   <h2>Submissions</h2>
-   <p>Monitor all examination attempts.</p>
+
+   <h2>
+    Submissions
+   </h2>
+
+   <p>
+    Monitor all examination attempts.
+   </p>
+
   </div>
 
  </div>
@@ -2034,42 +2777,60 @@ function renderSubmissions(){
 
      ${
       attempts.length
-      ?attempts.map(a=>`
+       ?attempts.map(a=>`
 
-       <tr>
+        <tr>
 
-        <td>${esc(a.examTitle)}</td>
+         <td>
+          ${esc(a.examTitle)}
+         </td>
 
-        <td>${esc(a.username)}</td>
+         <td>
+          ${esc(a.username)}
+         </td>
 
-        <td>
-         <span class="status-pill ${statusClass(a.status)}">
-          ${esc(a.status)}
-         </span>
-        </td>
+         <td>
 
-        <td>
-         ${a.violations||0}
-        </td>
+          <span class="status-pill ${
+           statusClass(a.status)
+          }">
 
-        <td>
-         ${fmtDate(a.startedAt)}
-        </td>
+           ${esc(a.status)}
 
-        <td>
-         ${fmtDate(a.endedAt)}
-        </td>
+          </span>
 
-       </tr>
+         </td>
 
-      `).join('')
-      :`
-       <tr>
-        <td colspan="6" class="empty-cell">
-         No examination submissions recorded.
-        </td>
-       </tr>
-      `
+         <td>
+          ${a.violations||0}
+         </td>
+
+         <td>
+          ${fmtDate(a.startedAt)}
+         </td>
+
+         <td>
+          ${fmtDate(a.endedAt)}
+         </td>
+
+        </tr>
+
+       `).join('')
+       :`
+
+        <tr>
+
+         <td
+          colspan="6"
+          class="empty-cell">
+
+          No examination submissions recorded.
+
+         </td>
+
+        </tr>
+
+       `
      }
 
     </tbody>
@@ -2091,18 +2852,20 @@ function renderSubmissions(){
 
 function renderViolations(){
 
- const el=$('#admin-violations-page');
+ const el=
+  $('#admin-violations-page');
 
  if(!el)return;
 
 
- const logs=db.violations
-  .slice()
-  .sort(
-   (a,b)=>
-    (b.timestamp||0)-
-    (a.timestamp||0)
-  );
+ const logs=
+  db.violations
+   .slice()
+   .sort(
+    (a,b)=>
+     (b.timestamp||0)-
+     (a.timestamp||0)
+   );
 
 
  el.innerHTML=`
@@ -2110,8 +2873,15 @@ function renderViolations(){
  <div class="page-heading-row">
 
   <div>
-   <h2>Violation Logs</h2>
-   <p>Recorded anti-cheat events during examinations.</p>
+
+   <h2>
+    Violation Logs
+   </h2>
+
+   <p>
+    Recorded anti-cheat events during examinations.
+   </p>
+
   </div>
 
  </div>
@@ -2140,40 +2910,48 @@ function renderViolations(){
 
      ${
       logs.length
-      ?logs.map(v=>`
+       ?logs.map(v=>`
 
-       <tr>
+        <tr>
 
-        <td>
-         ${fmtDate(v.timestamp)}
-        </td>
+         <td>
+          ${fmtDate(v.timestamp)}
+         </td>
 
-        <td>
-         ${esc(v.examTitle)}
-        </td>
+         <td>
+          ${esc(v.examTitle)}
+         </td>
 
-        <td>
-         ${esc(v.username)}
-        </td>
+         <td>
+          ${esc(v.username)}
+         </td>
 
-        <td>
-         ${v.number||0}
-        </td>
+         <td>
+          ${v.number||0}
+         </td>
 
-        <td>
-         ${esc(v.reason)}
-        </td>
+         <td>
+          ${esc(v.reason)}
+         </td>
 
-       </tr>
+        </tr>
 
-      `).join('')
-      :`
-       <tr>
-        <td colspan="5" class="empty-cell">
-         No violations recorded.
-        </td>
-       </tr>
-      `
+       `).join('')
+       :`
+
+        <tr>
+
+         <td
+          colspan="5"
+          class="empty-cell">
+
+          No violations recorded.
+
+         </td>
+
+        </tr>
+
+       `
      }
 
     </tbody>
@@ -2195,39 +2973,55 @@ function renderViolations(){
 
 function renderAnalytics(){
 
- const el=$('#admin-analytics-page');
+ const el=
+  $('#admin-analytics-page');
 
  if(!el)return;
 
 
- const total=db.attempts.length;
+ const total=
+  db.attempts.length;
 
- const completed=db.attempts.filter(
-  a=>a.status==='Completed'
- ).length;
 
- const violations=db.violations.length;
+ const completed=
+  db.attempts.filter(
+   a=>a.status==='Completed'
+  ).length;
 
- const terminated=db.attempts.filter(
-  a=>
-   a.status==='Terminated'||
-   a.status==='Time Expired'
- ).length;
+
+ const violations=
+  db.violations.length;
+
+
+ const terminated=
+  db.attempts.filter(
+   a=>
+    a.status==='Terminated' ||
+    a.status==='Time Expired'
+  ).length;
 
 
  const completedPct=
   total
-   ?Math.round(completed/total*100)
+   ?Math.round(
+    completed/total*100
+   )
    :0;
+
 
  const violationRate=
   total
-   ?Math.round(violations/total*100)
+   ?Math.round(
+    violations/total*100
+   )
    :0;
+
 
  const terminatedPct=
   total
-   ?Math.round(terminated/total*100)
+   ?Math.round(
+    terminated/total*100
+   )
    :0;
 
 
@@ -2236,8 +3030,15 @@ function renderAnalytics(){
  <div class="page-heading-row">
 
   <div>
-   <h2>Analytics</h2>
-   <p>Overview of examination performance and security activity.</p>
+
+   <h2>
+    Analytics
+   </h2>
+
+   <p>
+    Overview of examination performance and security activity.
+   </p>
+
   </div>
 
  </div>
@@ -2246,29 +3047,74 @@ function renderAnalytics(){
  <div class="stats-grid">
 
   <div class="stat-card">
-   <span class="stat-label">Completion Rate</span>
-   <strong>${completedPct}%</strong>
-   <small>${completed} completed of ${total} attempts</small>
-  </div>
 
-  <div class="stat-card">
-   <span class="stat-label">Violation Rate</span>
-   <strong>${violationRate}%</strong>
-   <small>${violations} total violations</small>
-  </div>
+   <span class="stat-label">
+    Completion Rate
+   </span>
 
-  <div class="stat-card">
-   <span class="stat-label">Terminated / Expired</span>
-   <strong>${terminatedPct}%</strong>
-   <small>${terminated} attempts</small>
-  </div>
-
-  <div class="stat-card">
-   <span class="stat-label">Active Exams</span>
    <strong>
-    ${db.exams.filter(e=>e.active).length}
+    ${completedPct}%
    </strong>
-   <small>Currently configured</small>
+
+   <small>
+    ${completed} completed of ${total} attempts
+   </small>
+
+  </div>
+
+
+  <div class="stat-card">
+
+   <span class="stat-label">
+    Violation Rate
+   </span>
+
+   <strong>
+    ${violationRate}%
+   </strong>
+
+   <small>
+    ${violations} total violations
+   </small>
+
+  </div>
+
+
+  <div class="stat-card">
+
+   <span class="stat-label">
+    Terminated / Expired
+   </span>
+
+   <strong>
+    ${terminatedPct}%
+   </strong>
+
+   <small>
+    ${terminated} attempts
+   </small>
+
+  </div>
+
+
+  <div class="stat-card">
+
+   <span class="stat-label">
+    Active Exams
+   </span>
+
+   <strong>
+    ${
+     db.exams.filter(
+      e=>normalizeBoolean(e.active)
+     ).length
+    }
+   </strong>
+
+   <small>
+    Currently configured
+   </small>
+
   </div>
 
  </div>
@@ -2279,8 +3125,15 @@ function renderAnalytics(){
   <div class="panel-header">
 
    <div>
-    <h3>Completion Progress</h3>
-    <p>Percentage of recorded examination attempts.</p>
+
+    <h3>
+     Completion Progress
+    </h3>
+
+    <p>
+     Percentage of recorded examination attempts.
+    </p>
+
    </div>
 
   </div>
@@ -2291,12 +3144,23 @@ function renderAnalytics(){
    <div class="progress-item">
 
     <div class="progress-meta">
-     <span>Completed</span>
-     <strong>${completedPct}%</strong>
+
+     <span>
+      Completed
+     </span>
+
+     <strong>
+      ${completedPct}%
+     </strong>
+
     </div>
 
     <div class="progress-track">
-     <span style="width:${completedPct}%"></span>
+
+     <span
+      style="width:${completedPct}%">
+     </span>
+
     </div>
 
    </div>
@@ -2305,12 +3169,23 @@ function renderAnalytics(){
    <div class="progress-item">
 
     <div class="progress-meta">
-     <span>Terminated / Expired</span>
-     <strong>${terminatedPct}%</strong>
+
+     <span>
+      Terminated / Expired
+     </span>
+
+     <strong>
+      ${terminatedPct}%
+     </strong>
+
     </div>
 
     <div class="progress-track">
-     <span style="width:${terminatedPct}%"></span>
+
+     <span
+      style="width:${terminatedPct}%">
+     </span>
+
     </div>
 
    </div>
@@ -2319,12 +3194,26 @@ function renderAnalytics(){
    <div class="progress-item">
 
     <div class="progress-meta">
-     <span>Violation Activity</span>
-     <strong>${violationRate}%</strong>
+
+     <span>
+      Violation Activity
+     </span>
+
+     <strong>
+      ${violationRate}%
+     </strong>
+
     </div>
 
     <div class="progress-track">
-     <span style="width:${Math.min(100,violationRate)}%"></span>
+
+     <span
+      style="width:${Math.min(
+       100,
+       violationRate
+      )}%">
+     </span>
+
     </div>
 
    </div>
@@ -2344,14 +3233,16 @@ function renderAnalytics(){
 
 function renderSettings(){
 
- const el=$('#admin-settings-page');
+ const el=
+  $('#admin-settings-page');
 
  if(!el)return;
 
 
- const examiners=db.users.filter(
-  u=>u.role==='examiner'
- );
+ const examiners=
+  db.users.filter(
+   u=>u.role==='examiner'
+  );
 
 
  el.innerHTML=`
@@ -2359,8 +3250,15 @@ function renderSettings(){
  <div class="page-heading-row">
 
   <div>
-   <h2>Settings</h2>
-   <p>Manage examiner accounts and demo data.</p>
+
+   <h2>
+    Settings
+   </h2>
+
+   <p>
+    Manage examiner accounts and demo data.
+   </p>
+
   </div>
 
  </div>
@@ -2371,8 +3269,15 @@ function renderSettings(){
   <div class="panel-header">
 
    <div>
-    <h3>Examiner Accounts</h3>
-    <p>Accounts created through examination setup.</p>
+
+    <h3>
+     Examiner Accounts
+    </h3>
+
+    <p>
+     Accounts created through examination setup.
+    </p>
+
    </div>
 
   </div>
@@ -2398,45 +3303,59 @@ function renderSettings(){
 
      ${
       examiners.length
-      ?examiners.map(u=>`
+       ?examiners.map(u=>`
 
-       <tr>
+        <tr>
 
-        <td>
-         ${esc(u.name||u.username)}
-        </td>
+         <td>
+          ${esc(
+           u.name||u.username
+          )}
+         </td>
 
-        <td>
-         ${esc(u.username)}
-        </td>
+         <td>
+          ${esc(u.username)}
+         </td>
 
-        <td>
-         <span class="status-pill status-success">
-          Examiner
-         </span>
-        </td>
+         <td>
 
-        <td>
+          <span class="status-pill status-success">
+           Examiner
+          </span>
 
-         <button
-          class="danger-btn small"
-          data-action="delete-user"
-          data-id="${u.id}">
-          Delete
-         </button>
+         </td>
 
-        </td>
+         <td>
 
-       </tr>
+          <button
+           class="danger-btn small"
+           data-action="delete-user"
+           data-id="${u.id}">
 
-      `).join('')
-      :`
-       <tr>
-        <td colspan="4" class="empty-cell">
-         No examiner accounts.
-        </td>
-       </tr>
-      `
+           Delete
+
+          </button>
+
+         </td>
+
+        </tr>
+
+       `).join('')
+       :`
+
+        <tr>
+
+         <td
+          colspan="4"
+          class="empty-cell">
+
+          No examiner accounts.
+
+         </td>
+
+        </tr>
+
+       `
      }
 
     </tbody>
@@ -2453,17 +3372,25 @@ function renderSettings(){
   <div class="panel-header">
 
    <div>
-    <h3>Demo Data</h3>
+
+    <h3>
+     Demo Data
+    </h3>
+
     <p>
      Restore the default examination,
      users and logs.
     </p>
+
    </div>
+
 
    <button
     class="danger-btn"
     data-action="reset-demo">
+
     Reset Demo Data
+
    </button>
 
   </div>
@@ -2483,7 +3410,8 @@ function renderSettings(){
 
 function openExaminer(){
 
- const u=currentUser();
+ const u=
+  currentUser();
 
  if(!u){
 
@@ -2513,27 +3441,31 @@ function openExaminer(){
 
 function examinerPage(page){
 
- page=page||'dashboard';
+ page=
+  page||'dashboard';
 
 
- $$('[data-examiner-page]').forEach(b=>{
+ $$('[data-examiner-page]').forEach(
+  b=>{
 
-  b.classList.toggle(
-   'active',
-   b.dataset.examinerPage===page
-  );
+   b.classList.toggle(
+    'active',
+    b.dataset.examinerPage===page
+   );
 
- });
-
-
- $$('.examiner-page').forEach(p=>{
-  p.classList.remove('active');
- });
-
-
- const target=$(
-  '#examiner-'+page+'-page'
+  }
  );
+
+
+ $$('.examiner-page').forEach(
+  p=>{
+   p.classList.remove('active');
+  }
+ );
+
+
+ const target=
+  $('#examiner-'+page+'-page');
 
 
  if(target){
@@ -2543,7 +3475,9 @@ function examinerPage(page){
  }
 
 
- const title=$('#examiner-page-title');
+ const title=
+  $('#examiner-page-title');
+
 
  if(title){
 
@@ -2562,133 +3496,141 @@ function examinerPage(page){
 
 function renderExaminerPage(page){
 
- if(page==='dashboard'){
-
-  renderExaminerDashboard();
-
- }else{
-
-  renderExaminerDashboard();
-
- }
+ renderExaminerDashboard();
 
 }
 
 
 function getAvailableExams(){
 
- const u=currentUser();
+ const u=
+  currentUser();
 
  if(!u)return[];
 
 
- const now=Date.now();
+ const now=
+  Date.now();
 
 
- return db.exams.filter(e=>{
+ return db.exams.filter(
+  e=>{
 
-  if(!e.active)return false;
+   if(
+    !normalizeBoolean(e.active)
+   ){
+
+    return false;
+
+   }
 
 
-  /*
-   Match examiner account.
-  */
-  if(
-   String(e.examinerUsername||'').toLowerCase()!==
-   String(u.username||'').toLowerCase()
-  ){
+   if(
+    String(
+     e.examinerUsername||''
+    ).trim().toLowerCase()!==
+    String(
+     u.username||''
+    ).trim().toLowerCase()
+   ){
 
-   return false;
+    return false;
+
+   }
+
+
+   if(
+    e.startAt &&
+    now<
+    new Date(e.startAt).getTime()
+   ){
+
+    return false;
+
+   }
+
+
+   if(
+    e.endAt &&
+    now>
+    new Date(e.endAt).getTime()
+   ){
+
+    return false;
+
+   }
+
+
+   const attempt=
+    db.attempts.find(
+     a=>
+      a.examId===e.id &&
+      a.userId===u.id
+    );
+
+
+   if(attempt){
+
+    return false;
+
+   }
+
+
+   return true;
 
   }
-
-
-  /*
-   Availability start.
-  */
-  if(
-   e.startAt &&
-   now<new Date(e.startAt).getTime()
-  ){
-
-   return false;
-
-  }
-
-
-  /*
-   Availability end.
-  */
-  if(
-   e.endAt &&
-   now>new Date(e.endAt).getTime()
-  ){
-
-   return false;
-
-  }
-
-
-  /*
-   Once taken, the examination cannot be retaken.
-  */
-  const attempt=db.attempts.find(
-   a=>
-    a.examId===e.id &&
-    a.userId===u.id
-  );
-
-
-  if(attempt){
-
-   return false;
-
-  }
-
-
-  return true;
-
- });
+ );
 
 }
 
 
 function renderExaminerDashboard(){
 
- const el=$('#examiner-dashboard-page');
+ const el=
+  $('#examiner-dashboard-page');
 
  if(!el)return;
 
 
- const u=currentUser();
+ const u=
+  currentUser();
 
  if(!u)return;
 
 
- const assigned=db.exams.filter(
-  e=>
-   String(e.examinerUsername||'').toLowerCase()===
-   String(u.username||'').toLowerCase()
- );
+ const assigned=
+  db.exams.filter(
+   e=>
+    String(
+     e.examinerUsername||''
+    ).trim().toLowerCase()===
+    String(
+     u.username||''
+    ).trim().toLowerCase()
+  );
 
 
- const available=getAvailableExams();
+ const available=
+  getAvailableExams();
 
 
- const taken=assigned.filter(
-  e=>
-   db.attempts.some(
-    a=>
-     a.examId===e.id &&
-     a.userId===u.id
-   )
- ).length;
+ const taken=
+  assigned.filter(
+   e=>
+    db.attempts.some(
+     a=>
+      a.examId===e.id &&
+      a.userId===u.id
+    )
+  ).length;
 
 
  const completedPct=
   assigned.length
    ?Math.round(
-    (taken/assigned.length)*100
+    taken/
+    assigned.length*
+    100
    )
    :0;
 
@@ -2703,7 +3645,11 @@ function renderExaminerDashboard(){
     EXAMINER PORTAL
    </span>
 
-   <h2>Welcome, ${esc(u.name||u.username)}</h2>
+   <h2>
+    Welcome, ${esc(
+     u.name||u.username
+    )}
+   </h2>
 
    <p>
     Select an available examination to begin.
@@ -2717,27 +3663,70 @@ function renderExaminerDashboard(){
  <div class="stats-grid">
 
   <div class="stat-card">
-   <span class="stat-label">Assigned Exams</span>
-   <strong>${assigned.length}</strong>
-   <small>Examinations assigned to you</small>
+
+   <span class="stat-label">
+    Assigned Exams
+   </span>
+
+   <strong>
+    ${assigned.length}
+   </strong>
+
+   <small>
+    Examinations assigned to you
+   </small>
+
   </div>
 
-  <div class="stat-card">
-   <span class="stat-label">Available</span>
-   <strong>${available.length}</strong>
-   <small>Ready to take</small>
-  </div>
 
   <div class="stat-card">
-   <span class="stat-label">Completed</span>
-   <strong>${taken}</strong>
-   <small>${completedPct}% completed</small>
+
+   <span class="stat-label">
+    Available
+   </span>
+
+   <strong>
+    ${available.length}
+   </strong>
+
+   <small>
+    Ready to take
+   </small>
+
   </div>
 
+
   <div class="stat-card">
-   <span class="stat-label">Account</span>
-   <strong>${esc(u.username)}</strong>
-   <small>Authenticated examiner</small>
+
+   <span class="stat-label">
+    Completed
+   </span>
+
+   <strong>
+    ${taken}
+   </strong>
+
+   <small>
+    ${completedPct}% completed
+   </small>
+
+  </div>
+
+
+  <div class="stat-card">
+
+   <span class="stat-label">
+    Account
+   </span>
+
+   <strong>
+    ${esc(u.username)}
+   </strong>
+
+   <small>
+    Authenticated examiner
+   </small>
+
   </div>
 
  </div>
@@ -2748,8 +3737,15 @@ function renderExaminerDashboard(){
   <div class="panel-header">
 
    <div>
-    <h3>Examination Progress</h3>
-    <p>Your assigned examination completion.</p>
+
+    <h3>
+     Examination Progress
+    </h3>
+
+    <p>
+     Your assigned examination completion.
+    </p>
+
    </div>
 
   </div>
@@ -2760,12 +3756,23 @@ function renderExaminerDashboard(){
    <div class="progress-item">
 
     <div class="progress-meta">
-     <span>Completed</span>
-     <strong>${completedPct}%</strong>
+
+     <span>
+      Completed
+     </span>
+
+     <strong>
+      ${completedPct}%
+     </strong>
+
     </div>
 
     <div class="progress-track">
-     <span style="width:${completedPct}%"></span>
+
+     <span
+      style="width:${completedPct}%">
+     </span>
+
     </div>
 
    </div>
@@ -2780,8 +3787,15 @@ function renderExaminerDashboard(){
   <div class="panel-header">
 
    <div>
-    <h3>Available Examinations</h3>
-    <p>Only examinations currently assigned and available are shown.</p>
+
+    <h3>
+     Available Examinations
+    </h3>
+
+    <p>
+     Only examinations currently assigned and available are shown.
+    </p>
+
    </div>
 
   </div>
@@ -2791,94 +3805,135 @@ function renderExaminerDashboard(){
 
    ${
     available.length
-    ?available.map(e=>`
+     ?available.map(e=>`
 
-     <article class="exam-management-card">
+      <article
+       class="exam-management-card">
 
-      <div class="exam-card-header">
+       <div class="exam-card-header">
 
-       <div>
+        <div>
 
-        <span class="eyebrow">
-         AVAILABLE
+         <span class="eyebrow">
+          AVAILABLE
+         </span>
+
+         <h3>
+          ${esc(e.title)}
+         </h3>
+
+        </div>
+
+
+        <span
+         class="status-pill status-success">
+
+         Ready
+
         </span>
 
-        <h3>
-         ${esc(e.title)}
-        </h3>
+       </div>
+
+
+       <p class="exam-description">
+
+        ${esc(
+         e.description||
+         'No description provided.'
+        )}
+
+       </p>
+
+
+       <div class="exam-detail-grid">
+
+        <div>
+
+         <span>
+          Timer
+         </span>
+
+         <strong>
+
+          ${
+           normalizeBoolean(e.timerEnabled)
+            ?`${normalizeDuration(e.durationMinutes)} min`
+            :'No Timer'
+          }
+
+         </strong>
+
+        </div>
+
+
+        <div>
+
+         <span>
+          Anti-Cheat
+         </span>
+
+         <strong>
+
+          ${
+           normalizeBoolean(e.antiCheat)
+            ?'Enabled'
+            :'Disabled'
+          }
+
+         </strong>
+
+        </div>
+
+
+        <div>
+
+         <span>
+          Max Violations
+         </span>
+
+         <strong>
+          ${
+           Math.max(
+            1,
+            Number(e.maxViolations)||3
+           )
+          }
+         </strong>
+
+        </div>
 
        </div>
 
-       <span class="status-pill status-success">
-        Ready
-       </span>
+
+       <div class="exam-card-actions">
+
+        <button
+         class="primary-btn"
+         data-action="start-exam"
+         data-id="${e.id}">
+
+         Start Examination →
+
+        </button>
+
+       </div>
+
+      </article>
+
+     `).join('')
+     :`
+
+      <div class="empty-state">
+
+       ${
+        assigned.length
+         ?'You have no available examinations. Any assigned exam may already have been completed or may be outside its availability period.'
+         :'No examinations have been assigned to your account.'
+       }
 
       </div>
 
-
-      <p class="exam-description">
-       ${esc(
-        e.description||
-        'No description provided.'
-       )}
-      </p>
-
-
-      <div class="exam-detail-grid">
-
-       <div>
-        <span>Timer</span>
-        <strong>
-         ${
-          e.timerEnabled
-           ?`${e.durationMinutes} min`
-           :'No Timer'
-         }
-        </strong>
-       </div>
-
-       <div>
-        <span>Anti-Cheat</span>
-        <strong>
-         ${e.antiCheat?'Enabled':'Disabled'}
-        </strong>
-       </div>
-
-       <div>
-        <span>Max Violations</span>
-        <strong>
-         ${e.maxViolations}
-        </strong>
-       </div>
-
-      </div>
-
-
-      <div class="exam-card-actions">
-
-       <button
-        class="primary-btn"
-        data-action="start-exam"
-        data-id="${e.id}">
-        Start Examination →
-       </button>
-
-      </div>
-
-     </article>
-
-    `).join('')
-    :`
-     <div class="empty-state">
-
-      ${
-       assigned.length
-        ?'You have no available examinations. Any assigned exam may already have been completed or may be outside its availability period.'
-        :'No examinations have been assigned to your account.'
-      }
-
-     </div>
-    `
+     `
    }
 
   </div>
@@ -2899,14 +3954,16 @@ function renderExaminerDashboard(){
 
 function startExam(id){
 
- const e=db.exams.find(
-  x=>x.id===id
- );
+ const e=
+  db.exams.find(
+   x=>x.id===id
+  );
 
  if(!e)return;
 
 
- const u=currentUser();
+ const u=
+  currentUser();
 
  if(!u){
 
@@ -2917,11 +3974,77 @@ function startExam(id){
  }
 
 
- const attempt=db.attempts.find(
-  a=>
-   a.examId===e.id &&
-   a.userId===u.id
- );
+ /*
+  Ensure the examiner is actually assigned
+  to this examination.
+ */
+ if(
+  String(
+   e.examinerUsername||''
+  ).trim().toLowerCase()!==
+  String(
+   u.username||''
+  ).trim().toLowerCase()
+ ){
+
+  toast(
+   'This examination is not assigned to your account.',
+   'error'
+  );
+
+  return;
+
+ }
+
+
+ /*
+  Check availability.
+ */
+ const now=
+  Date.now();
+
+
+ if(
+  e.startAt &&
+  now<
+  new Date(e.startAt).getTime()
+ ){
+
+  toast(
+   'This examination is not available yet.',
+   'error'
+  );
+
+  return;
+
+ }
+
+
+ if(
+  e.endAt &&
+  now>
+  new Date(e.endAt).getTime()
+ ){
+
+  toast(
+   'The availability period for this examination has ended.',
+   'error'
+  );
+
+  return;
+
+ }
+
+
+ /*
+  Prevent retaking.
+ */
+ const attempt=
+  db.attempts.find(
+   a=>
+    a.examId===e.id &&
+    a.userId===u.id
+  );
 
 
  if(attempt){
@@ -2943,9 +4066,28 @@ function startExam(id){
 
 function openStartConfirmation(e){
 
- const root=$('#modal-root');
+ const root=
+  $('#modal-root');
 
  if(!root)return;
+
+
+ const timerEnabled=
+  normalizeBoolean(
+   e.timerEnabled
+  );
+
+
+ const duration=
+  normalizeDuration(
+   e.durationMinutes
+  );
+
+
+ const antiCheat=
+  normalizeBoolean(
+   e.antiCheat
+  );
 
 
  root.hidden=false;
@@ -2971,11 +4113,14 @@ function openStartConfirmation(e){
 
     </div>
 
+
     <button
      class="icon-btn"
      data-action="close-modal"
      type="button">
+
      ×
+
     </button>
 
    </div>
@@ -2992,46 +4137,55 @@ function openStartConfirmation(e){
     <ul class="confirmation-list">
 
      <li>
+
       ${
-       e.timerEnabled
-        ?`You will have <strong>${e.durationMinutes} minutes</strong> to complete the examination.`
+       timerEnabled
+        ?`You will have <strong>${duration} minutes</strong> to complete the examination.`
         :'This examination has no timer.'
       }
+
      </li>
 
+
      <li>
+
       ${
-       e.antiCheat
-        ?`Anti-cheat monitoring is enabled with a maximum of <strong>${e.maxViolations} violations</strong>.`
+       antiCheat
+        ?`Anti-cheat monitoring is enabled with a maximum of <strong>${Math.max(1,Number(e.maxViolations)||3)} violations</strong>.`
         :'Anti-cheat monitoring is disabled.'
       }
+
      </li>
 
+
      <li>
+
       Submit the Google Form first, then click
       <strong>Submit Exam</strong> in the portal.
+
      </li>
 
+
      <li>
+
       Once submitted, the examination cannot be retaken.
+
      </li>
 
     </ul>
 
 
     ${
-     e.antiCheat
+     antiCheat
       ?`
+
        <div class="notice danger-notice">
 
         Fullscreen, tab/window focus and visibility
         events may be monitored.
 
-        Browser limitations mean this is a
-        detection/deterrence layer, not a guarantee
-        against cheating.
-
        </div>
+
       `
       :''
     }
@@ -3044,14 +4198,19 @@ function openStartConfirmation(e){
     <button
      class="secondary-btn"
      data-action="close-modal">
+
      Cancel
+
     </button>
+
 
     <button
      class="primary-btn"
      data-action="confirm-start"
      data-id="${e.id}">
+
      Start Examination
+
     </button>
 
    </div>
@@ -3073,23 +4232,64 @@ function confirmStart(id){
  closeModal();
 
 
- const e=db.exams.find(
-  x=>x.id===id
- );
+ /*
+  Reload DB before starting in case
+  the admin changed the exam settings.
+ */
+ db=loadDB();
 
- const u=currentUser();
 
- if(!e||!u)return;
+ const e=
+  db.exams.find(
+   x=>x.id===id
+  );
+
+
+ const u=
+  currentUser();
+
+
+ if(
+  !e ||
+  !u
+ ){
+
+  return;
+
+ }
+
+
+ /*
+  Final assignment check.
+ */
+ if(
+  String(
+   e.examinerUsername||''
+  ).trim().toLowerCase()!==
+  String(
+   u.username||''
+  ).trim().toLowerCase()
+ ){
+
+  toast(
+   'This examination is not assigned to your account.',
+   'error'
+  );
+
+  return;
+
+ }
 
 
  /*
   Final retake protection.
  */
- const existing=db.attempts.find(
-  a=>
-   a.examId===e.id &&
-   a.userId===u.id
- );
+ const existing=
+  db.attempts.find(
+   a=>
+    a.examId===e.id &&
+    a.userId===u.id
+  );
 
 
  if(existing){
@@ -3104,6 +4304,55 @@ function confirmStart(id){
  }
 
 
+ /*
+  NORMALIZE SETTINGS HERE.
+  This is the main timer fix.
+ */
+ const timerEnabled=
+  normalizeBoolean(
+   e.timerEnabled
+  );
+
+
+ const durationMinutes=
+  normalizeDuration(
+   e.durationMinutes
+  );
+
+
+ const antiCheat=
+  normalizeBoolean(
+   e.antiCheat
+  );
+
+
+ const maxViolations=
+  Math.max(
+   1,
+   Number(e.maxViolations)||3
+  );
+
+
+ /*
+  Save current normalized values
+  back into the exam object.
+ */
+ e.timerEnabled=
+  timerEnabled;
+
+ e.durationMinutes=
+  durationMinutes;
+
+ e.antiCheat=
+  antiCheat;
+
+ e.maxViolations=
+  maxViolations;
+
+
+ /*
+  Create attempt.
+ */
  const attempt={
 
   id:uid('attempt'),
@@ -3127,55 +4376,98 @@ function confirmStart(id){
  };
 
 
- db.attempts.push(attempt);
+ db.attempts.push(
+  attempt
+ );
+
 
  saveDB();
 
 
+ /*
+  IMPORTANT:
+  seconds is duration * 60 ONLY if
+  the timer is enabled.
+ */
  examState={
 
-  attemptId:attempt.id,
+  attemptId:
+   attempt.id,
 
   seconds:
-   Number(e.durationMinutes||60)*60,
+   timerEnabled
+    ?durationMinutes*60
+    :0,
 
-  timerEnabled:e.timerEnabled,
+  timerEnabled:
 
-  antiCheat:e.antiCheat,
+   timerEnabled,
 
-  maxViolations:e.maxViolations,
+  antiCheat:
 
-  startedAt:Date.now(),
+   antiCheat,
+
+  maxViolations:
+
+   maxViolations,
+
+  durationMinutes:
+
+   durationMinutes,
+
+  startedAt:
+
+   Date.now(),
 
   active:true
 
  };
 
 
- currentExam=clone(e);
+ currentExam=
+  clone(e);
 
 
+ /*
+  Update exam screen.
+ */
  $('#live-exam-title').textContent=
   e.title;
+
 
  $('#live-exam-examiner').textContent=
   'Assigned to '+u.username;
 
+
  $('#exam-violations').textContent=
-  `0 / ${e.maxViolations}`;
+  `0 / ${maxViolations}`;
 
 
- $('#exam-iframe').src=
-  e.formUrl;
+ const iframe=
+  $('#exam-iframe');
+
+
+ if(iframe){
+
+  iframe.src=
+   e.formUrl;
+
+ }
 
 
  $('#exam-instructions').textContent=
-  e.timerEnabled
-   ?`Timer: ${e.durationMinutes} minutes • Anti-cheat: ${
-      e.antiCheat?'Enabled':'Disabled'
+  timerEnabled
+
+   ?`Timer: ${durationMinutes} minutes • Anti-cheat: ${
+      antiCheat
+       ?'Enabled'
+       :'Disabled'
      } • Submit the Google Form, then click Submit Exam.`
+
    :`No timer • Anti-cheat: ${
-      e.antiCheat?'Enabled':'Disabled'
+      antiCheat
+       ?'Enabled'
+       :'Disabled'
      } • Submit the Google Form, then click Submit Exam.`;
 
 
@@ -3186,7 +4478,8 @@ function confirmStart(id){
   'lockdown-active'
  );
 
- $('#exam-view').classList.add(
+
+ $('#exam-view')?.classList.add(
   'lockdown-active'
  );
 
@@ -3195,34 +4488,51 @@ function confirmStart(id){
   Date.now()+GRACE;
 
 
- if(e.antiCheat){
-
-  requestFullscreen().finally(()=>{
-
-   graceUntil=
-    Date.now()+GRACE;
-
-  });
-
- }
-
-
- if(e.timerEnabled){
+ /*
+  Start timer immediately.
+ */
+ if(timerEnabled){
 
   startTimer();
 
  }else{
 
+  clearInterval(timer);
+
+  timer=null;
+
   renderTimer();
+
+ }
+
+
+ /*
+  Request fullscreen only if enabled.
+ */
+ if(antiCheat){
+
+  requestFullscreen()
+   .finally(
+    ()=>{
+     graceUntil=
+      Date.now()+GRACE;
+    }
+   );
 
  }
 
 }
 
 
+/* =========================================================
+   FULLSCREEN
+========================================================= */
+
 function requestFullscreen(){
 
- const el=document.documentElement;
+ const el=
+  document.documentElement;
+
 
  const fn=
   el.requestFullscreen||
@@ -3233,7 +4543,9 @@ function requestFullscreen(){
  return fn
   ?Promise.resolve(
     fn.call(el)
-   ).catch(()=>{})
+   ).catch(
+    ()=>{}
+   )
   :Promise.resolve();
 
 }
@@ -3254,7 +4566,9 @@ function exitFullscreen(){
 
   Promise.resolve(
    fn.call(document)
-  ).catch(()=>{});
+  ).catch(
+   ()=>{}
+  );
 
  }
 
@@ -3273,54 +4587,165 @@ function isFullscreen(){
 
 
 /* =========================================================
-   EXAM TIMER
+   TIMER
 ========================================================= */
 
 function startTimer(){
 
  clearInterval(timer);
 
- renderTimer();
 
-
- timer=setInterval(()=>{
-
-  if(!examState?.active){
-
-   clearInterval(timer);
-
-   return;
-
-  }
-
-
-  examState.seconds--;
+ /*
+  Make absolutely sure the timer starts
+  with the configured duration.
+ */
+ if(
+  !examState ||
+  !examState.active ||
+  !examState.timerEnabled
+ ){
 
   renderTimer();
 
+  return;
 
-  if(examState.seconds<=0){
+ }
 
-   clearInterval(timer);
 
-   finishExam(
-    'Time Expired',
-    'Time Expired',
-    'Your allotted examination time has ended.',
-    '⌛'
-   );
+ if(
+  !Number.isFinite(
+   Number(examState.seconds)
+  ) ||
+  Number(examState.seconds)<=0
+ ){
 
-  }
+  examState.seconds=
+   normalizeDuration(
+    examState.durationMinutes
+   )*60;
 
- },1000);
+ }
+
+
+ renderTimer();
+
+
+ timer=
+  setInterval(
+   ()=>{
+
+    if(
+     !examState ||
+     !examState.active
+    ){
+
+     clearInterval(timer);
+
+     timer=null;
+
+     return;
+
+    }
+
+
+    if(
+     !examState.timerEnabled
+    ){
+
+     clearInterval(timer);
+
+     timer=null;
+
+     renderTimer();
+
+     return;
+
+    }
+
+
+    examState.seconds=
+     Math.max(
+      0,
+      Number(examState.seconds)-1
+     );
+
+
+    renderTimer();
+
+
+    if(
+     examState.seconds<=0
+    ){
+
+     clearInterval(timer);
+
+     timer=null;
+
+
+     finishExam(
+      'Time Expired',
+      'Time Expired',
+      'Your allotted examination time has ended.',
+      '⌛'
+     );
+
+    }
+
+   },
+   1000
+  );
 
 }
 
 
 function renderTimer(){
 
+ const timerEl=
+  $('#exam-timer');
+
+
+ if(!timerEl){
+
+  return;
+
+ }
+
+
+ const enabled=
+  !!examState?.timerEnabled;
+
+
+ if(!enabled){
+
+  timerEl.textContent=
+   'No Timer';
+
+  timerEl.classList.remove(
+   'warning',
+   'danger'
+  );
+
+  const progress=
+   $('#exam-progress');
+
+  if(progress){
+
+   progress.style.width='0%';
+
+  }
+
+  return;
+
+ }
+
+
  const t=
-  examState?.seconds??0;
+  Math.max(
+   0,
+   Number(
+    examState?.seconds
+   )||0
+  );
 
 
  const m=
@@ -3335,21 +4760,14 @@ function renderTimer(){
    .padStart(2,'0');
 
 
- const timerEl=$('#exam-timer');
-
-
- if(!timerEl)return;
-
-
  timerEl.textContent=
-  examState?.timerEnabled
-   ?`${m}:${s}`
-   :'No Timer';
+  `${m}:${s}`;
 
 
  timerEl.classList.toggle(
   'warning',
-  t<=300&&t>60
+  t<=300 &&
+  t>60
  );
 
 
@@ -3359,31 +4777,38 @@ function renderTimer(){
  );
 
 
+ const duration=
+  Math.max(
+   1,
+   normalizeDuration(
+    examState?.durationMinutes
+   )
+  );
+
+
+ const totalSeconds=
+  duration*60;
+
+
  const pct=
-  examState?.timerEnabled&&
-  currentExam?.durationMinutes
-
-   ?Math.max(
-     0,
-     Math.min(
-      100,
-      (
-       t/
-       (
-        currentExam.durationMinutes*60
-       )
-      )*100
-     )
-    )
-
-   :0;
+  Math.max(
+   0,
+   Math.min(
+    100,
+    t/totalSeconds*100
+   )
+  );
 
 
- const progress=$('#exam-progress');
+ const progress=
+  $('#exam-progress');
 
 
  if(progress){
 
+  /*
+   Progress represents elapsed time.
+  */
   progress.style.width=
    (100-pct)+'%';
 
@@ -3393,7 +4818,7 @@ function renderTimer(){
 
 
 /* =========================================================
-   PROCTORING / ANTI-CHEAT
+   ANTI-CHEAT
 ========================================================= */
 
 function registerViolation(reason){
@@ -3408,7 +4833,8 @@ function registerViolation(reason){
  }
 
 
- const now=Date.now();
+ const now=
+  Date.now();
 
 
  if(
@@ -3422,12 +4848,16 @@ function registerViolation(reason){
  }
 
 
- lastViolation=now;
+ lastViolation=
+  now;
 
 
- const a=db.attempts.find(
-  x=>x.id===examState.attemptId
- );
+ const a=
+  db.attempts.find(
+   x=>
+    x.id===
+    examState.attemptId
+  );
 
 
  if(!a)return;
@@ -3437,7 +4867,8 @@ function registerViolation(reason){
   (a.violations||0)+1;
 
 
- a.violations=n;
+ a.violations=
+  n;
 
 
  db.violations.push({
@@ -3502,30 +4933,75 @@ function showViolationOverlay(reason){
  }
 
 
- violationOverlayOpen=true;
+ violationOverlayOpen=
+  true;
 
 
- $('#violation-reason').textContent=
-  reason;
+ const reasonEl=
+  $('#violation-reason');
 
 
- const a=db.attempts.find(
-  x=>x.id===examState.attemptId
- );
+ if(reasonEl){
+
+  reasonEl.textContent=
+   reason;
+
+ }
 
 
- $('#overlay-count').textContent=
-  a?.violations||0;
-
- $('#overlay-max').textContent=
-  examState.maxViolations;
-
-
- $('#violation-overlay').hidden=false;
+ const a=
+  db.attempts.find(
+   x=>
+    x.id===
+    examState.attemptId
+  );
 
 
- $('#exam-iframe').style.filter=
-  'blur(6px) brightness(.45)';
+ const count=
+  $('#overlay-count');
+
+
+ const max=
+  $('#overlay-max');
+
+
+ if(count){
+
+  count.textContent=
+   a?.violations||0;
+
+ }
+
+
+ if(max){
+
+  max.textContent=
+   examState.maxViolations;
+
+ }
+
+
+ const overlay=
+  $('#violation-overlay');
+
+
+ if(overlay){
+
+  overlay.hidden=false;
+
+ }
+
+
+ const iframe=
+  $('#exam-iframe');
+
+
+ if(iframe){
+
+  iframe.style.filter=
+   'blur(6px) brightness(.45)';
+
+ }
 
 }
 
@@ -3534,7 +5010,9 @@ $('#resume-exam-btn')?.addEventListener(
  'click',
  async()=>{
 
-  if(!examState?.active)return;
+  if(
+   !examState?.active
+  )return;
 
 
   $('#violation-overlay').hidden=true;
@@ -3542,7 +5020,15 @@ $('#resume-exam-btn')?.addEventListener(
   violationOverlayOpen=false;
 
 
-  $('#exam-iframe').style.filter='';
+  const iframe=
+   $('#exam-iframe');
+
+
+  if(iframe){
+
+   iframe.style.filter='';
+
+  }
 
 
   graceUntil=
@@ -3559,41 +5045,37 @@ $('#resume-exam-btn')?.addEventListener(
 );
 
 
-/*
- Fullscreen changes.
- */
 [
  'fullscreenchange',
  'webkitfullscreenchange',
  'mozfullscreenchange'
-].forEach(ev=>{
+].forEach(
+ ev=>{
 
- document.addEventListener(
-  ev,
-  ()=>{
+  document.addEventListener(
+   ev,
+   ()=>{
 
-   if(
-    examState?.active &&
-    examState.antiCheat &&
-    !isFullscreen() &&
-    Date.now()>graceUntil
-   ){
+    if(
+     examState?.active &&
+     examState.antiCheat &&
+     !isFullscreen() &&
+     Date.now()>graceUntil
+    ){
 
-    registerViolation(
-     'You exited full-screen mode.'
-    );
+     registerViolation(
+      'You exited full-screen mode.'
+     );
+
+    }
 
    }
+  );
 
-  }
- );
-
-});
+ }
+);
 
 
-/*
- Tab visibility.
- */
 document.addEventListener(
  'visibilitychange',
  ()=>{
@@ -3614,9 +5096,6 @@ document.addEventListener(
 );
 
 
-/*
- Window focus.
- */
 window.addEventListener(
  'blur',
  ()=>{
@@ -3636,14 +5115,13 @@ window.addEventListener(
 );
 
 
-/*
- Disable context menu during examination.
- */
 document.addEventListener(
  'contextmenu',
  e=>{
 
-  if(examState?.active){
+  if(
+   examState?.active
+  ){
 
    e.preventDefault();
 
@@ -3653,14 +5131,13 @@ document.addEventListener(
 );
 
 
-/*
- Disable copy.
- */
 document.addEventListener(
  'copy',
  e=>{
 
-  if(examState?.active){
+  if(
+   examState?.active
+  ){
 
    e.preventDefault();
 
@@ -3670,14 +5147,13 @@ document.addEventListener(
 );
 
 
-/*
- Disable cut.
- */
 document.addEventListener(
  'cut',
  e=>{
 
-  if(examState?.active){
+  if(
+   examState?.active
+  ){
 
    e.preventDefault();
 
@@ -3687,14 +5163,13 @@ document.addEventListener(
 );
 
 
-/*
- Disable paste.
- */
 document.addEventListener(
  'paste',
  e=>{
 
-  if(examState?.active){
+  if(
+   examState?.active
+  ){
 
    e.preventDefault();
 
@@ -3704,18 +5179,18 @@ document.addEventListener(
 );
 
 
-/*
- Restricted keyboard shortcuts.
- */
 document.addEventListener(
  'keydown',
  e=>{
 
-  if(!examState?.active)return;
+  if(
+   !examState?.active
+  )return;
 
 
   const k=
    (e.key||'').toLowerCase();
+
 
   const mod=
    e.ctrlKey||
@@ -3727,13 +5202,13 @@ document.addEventListener(
    k==='f12'||
 
    (
-    mod&&
-    e.shiftKey&&
+    mod &&
+    e.shiftKey &&
     ['i','j','c'].includes(k)
    )||
 
    (
-    mod&&
+    mod &&
     ['t','n','w','u'].includes(k)
    );
 
@@ -3763,14 +5238,13 @@ document.addEventListener(
 );
 
 
-/*
- Warn before leaving an active exam.
- */
 window.addEventListener(
  'beforeunload',
  e=>{
 
-  if(examState?.active){
+  if(
+   examState?.active
+  ){
 
    e.preventDefault();
 
@@ -3782,10 +5256,6 @@ window.addEventListener(
 );
 
 
-/*
- Security UI guard:
- violation prompts are shown only during an active exam.
- */
 function syncViolationOverlay(){
 
  const overlay=
@@ -3797,7 +5267,9 @@ function syncViolationOverlay(){
  if(!overlay)return;
 
 
- if(!examState?.active){
+ if(
+  !examState?.active
+ ){
 
   violationOverlayOpen=false;
 
@@ -3819,12 +5291,15 @@ $('#exam-submit-btn')?.addEventListener(
  'click',
  ()=>{
 
-  if(!examState?.active)return;
+  if(
+   !examState?.active
+  )return;
 
 
-  const ok=confirm(
-   'Confirm that you have submitted the Google Form. This will permanently end this exam attempt and cannot be undone.'
-  );
+  const ok=
+   confirm(
+    'Confirm that you have submitted the Google Form. This will permanently end this exam attempt and cannot be undone.'
+   );
 
 
   if(ok){
@@ -3851,10 +5326,13 @@ function finishExam(
  terminated=false
 ){
 
- if(!examState?.active)return;
+ if(
+  !examState?.active
+ )return;
 
 
- examState.active=false;
+ examState.active=
+  false;
 
 
  clearInterval(timer);
@@ -3862,15 +5340,21 @@ function finishExam(
  timer=null;
 
 
- const a=db.attempts.find(
-  x=>x.id===examState.attemptId
- );
+ const a=
+  db.attempts.find(
+   x=>
+    x.id===
+    examState.attemptId
+  );
 
 
  if(a){
 
-  a.status=status;
-  a.endedAt=Date.now();
+  a.status=
+   status;
+
+  a.endedAt=
+   Date.now();
 
  }
 
@@ -3878,9 +5362,19 @@ function finishExam(
  saveDB();
 
 
- $('#violation-overlay').hidden=true;
+ const overlay=
+  $('#violation-overlay');
 
- violationOverlayOpen=false;
+
+ if(overlay){
+
+  overlay.hidden=true;
+
+ }
+
+
+ violationOverlayOpen=
+  false;
 
 
  document.body.classList.remove(
@@ -3888,7 +5382,7 @@ function finishExam(
  );
 
 
- $('#exam-view').classList.remove(
+ $('#exam-view')?.classList.remove(
   'lockdown-active'
  );
 
@@ -3896,53 +5390,82 @@ function finishExam(
  exitFullscreen();
 
 
- $('#result-icon').textContent=
-  icon;
+ if($('#result-icon')){
+
+  $('#result-icon').textContent=
+   icon;
+
+  $('#result-icon').style.color=
+   terminated
+    ?'var(--danger)'
+    :'var(--success)';
+
+  $('#result-icon').style.background=
+   terminated
+    ?'rgba(239,91,103,.12)'
+    :'rgba(49,196,141,.12)';
+
+ }
 
 
- $('#result-icon').style.color=
-  terminated
-   ?'var(--danger)'
-   :'var(--success)';
+ if($('#result-eyebrow')){
+
+  $('#result-eyebrow').textContent=
+   terminated
+    ?'EXAM TERMINATED'
+    :status==='Time Expired'
+     ?'TIME EXPIRED'
+     :'EXAM COMPLETE';
+
+ }
 
 
- $('#result-icon').style.background=
-  terminated
-   ?'rgba(239,91,103,.12)'
-   :'rgba(49,196,141,.12)';
+ if($('#result-title')){
+
+  $('#result-title').textContent=
+   title;
+
+ }
 
 
- $('#result-eyebrow').textContent=
+ if($('#result-message')){
 
-  terminated
-   ?'EXAM TERMINATED'
-   :status==='Time Expired'
-    ?'TIME EXPIRED'
-    :'EXAM COMPLETE';
+  $('#result-message').textContent=
+   message;
 
-
- $('#result-title').textContent=
-  title;
+ }
 
 
- $('#result-message').textContent=
-  message;
+ if($('#result-exam')){
+
+  $('#result-exam').textContent=
+   currentExam?.title||'—';
+
+ }
 
 
- $('#result-exam').textContent=
-  currentExam?.title||'—';
+ if($('#result-user')){
+
+  $('#result-user').textContent=
+   currentUser()?.username||'—';
+
+ }
 
 
- $('#result-user').textContent=
-  currentUser()?.username||'—';
+ if($('#result-violations')){
+
+  $('#result-violations').textContent=
+   a?.violations||0;
+
+ }
 
 
- $('#result-violations').textContent=
-  a?.violations||0;
+ if($('#result-ended')){
 
+  $('#result-ended').textContent=
+   fmtDate(Date.now());
 
- $('#result-ended').textContent=
-  fmtDate(Date.now());
+ }
 
 
  showView('result');
@@ -3970,128 +5493,174 @@ $('#result-dashboard-btn')?.addEventListener(
 
 function bindActions(){
 
- $$('[data-action]').forEach(b=>{
+ $$('[data-action]').forEach(
+  b=>{
 
-  if(b.dataset.bound)return;
+   if(b.dataset.bound)return;
 
-  b.dataset.bound='1';
-
-
-  b.addEventListener(
-   'click',
-   ()=>{
-
-    const a=b.dataset.action;
-
-    const id=b.dataset.id;
+   b.dataset.bound='1';
 
 
-    if(a==='new-exam'){
+   b.addEventListener(
+    'click',
+    ()=>{
 
-     openExamModal();
+     const a=
+      b.dataset.action;
+
+     const id=
+      b.dataset.id;
+
+
+     if(
+      a==='new-exam'
+     ){
+
+      openExamModal();
+
+     }
+
+
+     if(
+      a==='edit-exam'
+     ){
+
+      openExamModal(id);
+
+     }
+
+
+     if(
+      a==='delete-exam'
+     ){
+
+      deleteExam(id);
+
+     }
+
+
+     if(
+      a==='close-modal'
+     ){
+
+      closeModal();
+
+     }
+
+
+     if(
+      a==='confirm-start'
+     ){
+
+      confirmStart(id);
+
+     }
+
+
+     if(
+      a==='start-exam'
+     ){
+
+      startExam(id);
+
+     }
+
+
+     if(
+      a==='view-submissions'
+     ){
+
+      adminPage(
+       'submissions'
+      );
+
+     }
+
+
+     if(
+      a==='refresh-admin'
+     ){
+
+      db=loadDB();
+
+      const title=
+       $('#admin-page-title')
+        ?.textContent||
+       'Dashboard';
+
+
+      const page=
+       Object.keys(pageTitles)
+        .find(
+         key=>
+          pageTitles[key]===title
+        )||
+       'dashboard';
+
+
+      renderAdminPage(page);
+
+     }
+
+
+     if(
+      a==='toggle-theme'
+     ){
+
+      toggleTheme();
+
+     }
+
+
+     if(
+      a==='reset-demo'
+     ){
+
+      resetDemo();
+
+     }
+
+
+     if(
+      a==='delete-user'
+     ){
+
+      deleteUser(id);
+
+     }
 
     }
+   );
 
-
-    if(a==='edit-exam'){
-
-     openExamModal(id);
-
-    }
-
-
-    if(a==='delete-exam'){
-
-     deleteExam(id);
-
-    }
-
-
-    if(a==='close-modal'){
-
-     closeModal();
-
-    }
-
-
-    if(a==='confirm-start'){
-
-     confirmStart(id);
-
-    }
-
-
-    if(a==='start-exam'){
-
-     startExam(id);
-
-    }
-
-
-    if(a==='view-submissions'){
-
-     adminPage('submissions');
-
-    }
-
-
-    if(a==='refresh-admin'){
-
-     db=loadDB();
-
-     const title=
-      $('#admin-page-title')?.textContent||
-      'Dashboard';
-
-     const page=
-      Object.keys(pageTitles).find(
-       key=>pageTitles[key]===title
-      )||'dashboard';
-
-     renderAdminPage(page);
-
-    }
-
-
-    if(a==='toggle-theme'){
-
-     toggleTheme();
-
-    }
-
-
-    if(a==='reset-demo'){
-
-     resetDemo();
-
-    }
-
-
-    if(a==='delete-user'){
-
-     deleteUser(id);
-
-    }
-
-   }
-  );
-
- });
+  }
+ );
 
 }
 
 
 function deleteUser(id){
 
- if(db.users.length<=1)return;
-
-
- const u=db.users.find(
-  x=>x.id===id
- );
+ const u=
+  db.users.find(
+   x=>x.id===id
+  );
 
 
  if(!u)return;
+
+
+ if(
+  u.role==='admin'
+ ){
+
+  toast(
+   'Administrator accounts cannot be deleted here.',
+   'error'
+  );
+
+  return;
+
+ }
 
 
  if(
@@ -4108,7 +5677,9 @@ function deleteUser(id){
 
   saveDB();
 
+
   renderSettings();
+
 
   toast(
    'User deleted.',
@@ -4133,7 +5704,9 @@ function resetDemo(){
  }
 
 
- db=clone(seed);
+ db=
+  clone(seed);
+
 
  saveDB();
 
@@ -4150,7 +5723,51 @@ function resetDemo(){
 
 
 /* =========================================================
-   CLOCKS
+   STATUS CLASS
+========================================================= */
+
+function statusClass(status){
+
+ const s=
+  String(status||'')
+   .toLowerCase();
+
+
+ if(
+  s==='completed'
+ ){
+
+  return 'status-success';
+
+ }
+
+
+ if(
+  s==='in progress'
+ ){
+
+  return 'status-warning';
+
+ }
+
+
+ if(
+  s==='terminated' ||
+  s==='time expired'
+ ){
+
+  return 'status-danger';
+
+ }
+
+
+ return 'status-muted';
+
+}
+
+
+/* =========================================================
+   CLOCK
 ========================================================= */
 
 setInterval(
@@ -4163,20 +5780,23 @@ setInterval(
   const adminClock=
    $('#admin-clock');
 
+
   const examinerClock=
    $('#examiner-clock');
 
 
   if(adminClock){
 
-   adminClock.textContent=now;
+   adminClock.textContent=
+    now;
 
   }
 
 
   if(examinerClock){
 
-   examinerClock.textContent=now;
+   examinerClock.textContent=
+    now;
 
   }
 
@@ -4186,58 +5806,64 @@ setInterval(
 
 
 /* =========================================================
-   SAFE STARTUP
+   STARTUP
 ========================================================= */
 
 function initializePortal(){
 
  /*
-  Rebuild/repair data before doing anything else.
+  Load and repair database first.
  */
- db=loadDB();
+ db=
+  loadDB();
 
 
  /*
-  Initialize login event.
+  Bind login.
  */
  initAuthentication();
 
 
  /*
-  Theme buttons.
+  Bind theme buttons.
  */
  [
   'theme-toggle-login',
   'theme-toggle-admin',
   'theme-toggle-examiner'
- ].forEach(id=>{
+ ].forEach(
+  id=>{
 
-  const b=$('#'+id);
+   const b=
+    $('#'+id);
 
-  if(
-   b &&
-   b.dataset.themeBound!=='1'
-  ){
 
-   b.addEventListener(
-    'click',
-    toggleTheme
-   );
+   if(
+    b &&
+    b.dataset.themeBound!=='1'
+   ){
 
-   b.dataset.themeBound='1';
+    b.addEventListener(
+     'click',
+     toggleTheme
+    );
+
+    b.dataset.themeBound='1';
+
+   }
 
   }
-
- });
+ );
 
 
  /*
-  Logout buttons.
+  Bind logout buttons.
  */
  $('#admin-logout')?.addEventListener(
   'click',
   logout
  );
+
 
  $('#examiner-logout')?.addEventListener(
   'click',
@@ -4246,27 +5872,26 @@ function initializePortal(){
 
 
  /*
-  Apply current theme.
+  Apply saved theme.
  */
  applyTheme();
 
 
  /*
-  Remove broken sessions.
+  Remove invalid sessions.
  */
  clearBrokenSession();
 
 
  /*
-  Ensure violation overlay is hidden
+  Keep violation overlay hidden
   outside an active examination.
  */
  syncViolationOverlay();
 
 
  /*
-  Always have a real dashboard after
-  successful authentication.
+  Restore active session if valid.
  */
  if(
   session &&
@@ -4289,7 +5914,7 @@ function initializePortal(){
 
 
 /*
- Initialize after DOM is available.
+ Initialize only after DOM is ready.
  */
 if(
  document.readyState==='loading'
