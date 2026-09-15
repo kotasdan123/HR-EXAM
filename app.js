@@ -1,4852 +1,2638 @@
-/* ================================================================
-   PROCTOR+ SECURE EXAM PORTAL
-   Complete app.js
-   ================================================================
-
-   IMPORTANT:
-   This is a browser-only prototype.
-
-   Client-side JavaScript cannot completely prevent:
-   - Opening another browser tab
-   - Switching applications/windows
-   - Opening browser DevTools
-   - Browser-level shortcuts
-
-   This application detects and logs these events while an exam
-   session is active and applies the configured violation limit.
-
-   For production deployment, authentication, exam records,
-   attempts, timers and violation logs should be moved to a
-   server/database.
-
-   Google Forms are cross-origin, so this portal cannot detect the
-   actual Google Forms Submit button. The portal's "Submit Exam"
-   button is the auditable end-of-session signal.
-================================================================ */
-
+/* Secure Exam Portal - frontend prototype
+   Builds on the original client-side proctoring approach. Because this is a
+   browser-only app, authentication, passwords, attempt locks and logs are
+   stored in localStorage and are NOT secure enough for production. A real
+   deployment should move auth, exam data, attempts and violation records to
+   a server/database. Google Forms remain cross-origin, so this app cannot
+   detect the actual Google Forms Submit click; the portal Submit button is
+   the auditable end-of-session signal.
+*/
 (() => {
-  'use strict';
+'use strict';
 
-  /* ================================================================
-     CONFIGURATION
-  ================================================================ */
+const KEY='secure_exam_portal_v2';
+const SESSION='secure_exam_session_v2';
+const DEFAULT_FORM='https://docs.google.com/forms/d/e/1FAIpQLSf_PLACEHOLDER_FORM_ID/viewform?embedded=true';
 
-  const KEY = 'secure_exam_portal_v2';
-  const SESSION = 'secure_exam_session_v2';
-
-  const DEFAULT_FORM =
-    'https://docs.google.com/forms/d/e/1FAIpQLSf_PLACEHOLDER_FORM_ID/viewform?embedded=true';
-
-  const MAX_EXAMS = 6;
-
-  const seed = {
-    users: [
-      {
-        id: 'u-admin',
-        username: 'admin',
-        password: '123admin',
-        role: 'admin',
-        name: 'Administrator'
-      },
-      {
-        id: 'u-test',
-        username: 'test',
-        password: 'test',
-        role: 'examiner',
-        name: 'Test Examiner'
-      }
-    ],
-
-    exams: [
-      {
-        id: 'exam-demo',
-        title: 'Demo Examination',
-        description:
-          'Replace this Google Form with your actual examination link.',
-        formUrl: DEFAULT_FORM,
-        examinerUsername: 'test',
-        examinerPassword: 'test',
-
-        antiCheat: true,
-        maxViolations: 3,
-
-        timerEnabled: true,
-        durationMinutes: 60,
-
-        startAt: '',
-        endAt: '',
-        active: true,
-
-        createdAt: Date.now(),
-        createdBy: 'u-admin'
-      }
-    ],
-
-    attempts: [],
-    violations: [],
-    theme: 'dark'
-  };
-
-  /* ================================================================
-     STATE
-  ================================================================ */
-
-  let db = loadDB();
-  let session = loadSession();
-
-  let currentExam = null;
-  let timer = null;
-  let examState = null;
-
-  let violationOverlayOpen = false;
-  let graceUntil = 0;
-  let lastViolation = 0;
-
-  const DEBOUNCE = 650;
-  const GRACE = 1800;
-
-  /* ================================================================
-     DOM HELPERS
-  ================================================================ */
-
-  const $ = selector => document.querySelector(selector);
-
-  const $$ = selector => [...document.querySelectorAll(selector)];
-
-  const views = {
-    login: $('#login-view'),
-    admin: $('#admin-view'),
-    examiner: $('#examiner-view'),
-    exam: $('#exam-view'),
-    result: $('#result-view')
-  };
-
-  /* ================================================================
-     GENERAL HELPERS
-  ================================================================ */
-
-  function clone(value) {
-    return JSON.parse(JSON.stringify(value));
+const seed={
+ users:[
+  {id:'u-admin',username:'admin',password:'123admin',role:'admin',name:'Administrator'},
+  {id:'u-test',username:'test',password:'test',role:'examiner',name:'Test Examiner'}
+ ],
+ exams:[
+  {
+   id:'exam-demo',
+   title:'Demo Examination',
+   description:'Replace this Google Form with your actual examination link.',
+   formUrl:DEFAULT_FORM,
+   examinerUsername:'test',
+   examinerPassword:'test',
+   antiCheat:true,
+   maxViolations:3,
+   timerEnabled:true,
+   durationMinutes:60,
+   startAt:'',
+   endAt:'',
+   active:true,
+   createdAt:Date.now(),
+   createdBy:'u-admin'
   }
+ ],
+ attempts:[],
+ violations:[],
+ theme:'dark'
+};
 
-  function uid(prefix = 'id') {
-    return (
-      prefix +
-      '-' +
-      Date.now().toString(36) +
-      '-' +
-      Math.random().toString(36).slice(2, 8)
-    );
+let db=loadDB();
+let session=loadSession();
+let currentExam=null;
+let timer=null;
+let examState=null;
+let violationOverlayOpen=false;
+let graceUntil=0;
+let lastViolation=0;
+
+const DEBOUNCE=650;
+const GRACE=1500;
+
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+
+const views={
+ login:$('#login-view'),
+ admin:$('#admin-view'),
+ examiner:$('#examiner-view'),
+ exam:$('#exam-view'),
+ result:$('#result-view')
+};
+
+function clone(x){
+ return JSON.parse(JSON.stringify(x));
+}
+
+function safeGet(storage,key){
+ try{
+  return storage.getItem(key);
+ }catch(e){
+  console.warn('Storage read failed:',e);
+  return null;
+ }
+}
+
+function safeSet(storage,key,value){
+ try{
+  storage.setItem(key,value);
+  return true;
+ }catch(e){
+  console.warn('Storage write failed:',e);
+  return false;
+ }
+}
+
+function safeRemove(storage,key){
+ try{
+  storage.removeItem(key);
+ }catch(e){
+  console.warn('Storage remove failed:',e);
+ }
+}
+
+function loadDB(){
+ let x={};
+
+ try{
+  const raw=safeGet(localStorage,KEY);
+
+  if(raw){
+   try{
+    x=JSON.parse(raw)||{};
+   }catch(e){
+    x={};
+   }
   }
-
-  function esc(value = '') {
-    return String(value).replace(
-      /[&<>'"]/g,
-      char => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        "'": '&#39;',
-        '"': '&quot;'
-      })[char]
-    );
-  }
-
-  function boolSetting(value, fallback = false) {
-    if (
-      value === true ||
-      value === 1 ||
-      value === '1' ||
-      value === 'true' ||
-      value === 'on' ||
-      value === 'yes'
-    ) {
-      return true;
-    }
-
-    if (
-      value === false ||
-      value === 0 ||
-      value === '0' ||
-      value === 'false' ||
-      value === 'off' ||
-      value === 'no' ||
-      value === '' ||
-      value == null
-    ) {
-      return false;
-    }
-
-    return fallback;
-  }
-
-  function fmtDate(timestamp) {
-    if (!timestamp) return '—';
-
-    return new Date(timestamp).toLocaleString([], {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
-
-  function fmtDateOnly(timestamp) {
-    if (!timestamp) return '—';
-
-    return new Date(timestamp).toLocaleDateString([], {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  }
-
-  function fmtTime(timestamp) {
-    if (!timestamp) return '—';
-
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
-
-  function formatDuration(seconds) {
-    seconds = Math.max(0, Math.round(Number(seconds) || 0));
-
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-      return (
-        hours +
-        'h ' +
-        String(minutes).padStart(2, '0') +
-        'm'
-      );
-    }
-
-    if (minutes > 0) {
-      return (
-        minutes +
-        'm ' +
-        String(secs).padStart(2, '0') +
-        's'
-      );
-    }
-
-    return secs + 's';
-  }
-
-  function safeGet(storage, key) {
-    try {
-      return storage.getItem(key);
-    } catch (error) {
-      console.warn('Storage read failed:', error);
-      return null;
-    }
-  }
-
-  function safeSet(storage, key, value) {
-    try {
-      storage.setItem(key, value);
-      return true;
-    } catch (error) {
-      console.warn('Storage write failed:', error);
-      return false;
-    }
-  }
-
-  function safeRemove(storage, key) {
-    try {
-      storage.removeItem(key);
-    } catch (error) {
-      console.warn('Storage remove failed:', error);
-    }
-  }
-
-  /* ================================================================
-     DATABASE
-  ================================================================ */
-
-  function loadDB() {
-    let stored = {};
-
-    try {
-      const raw = safeGet(localStorage, KEY);
-
-      if (raw) {
-        try {
-          stored = JSON.parse(raw) || {};
-        } catch (error) {
-          stored = {};
-        }
-      }
-    } catch (error) {
-      stored = {};
-    }
-
-    const users = Array.isArray(stored.users)
-      ? stored.users
-      : [];
-
-    /* Always repair built-in accounts */
-    seed.users.forEach(seedUser => {
-      const existing = users.find(
-        user =>
-          String(user?.username || '')
-            .trim()
-            .toLowerCase() ===
-          seedUser.username.toLowerCase()
-      );
-
-      if (!existing) {
-        users.push(clone(seedUser));
-      } else if (
-        seedUser.username === 'admin' ||
-        seedUser.username === 'test'
-      ) {
-        existing.username = seedUser.username;
-        existing.password = seedUser.password;
-        existing.role = seedUser.role;
-        existing.name = seedUser.name;
-      }
-    });
-
-    const repaired = {
-      ...clone(seed),
-      ...stored,
-
-      users,
-
-      exams:
-        Array.isArray(stored.exams) && stored.exams.length
-          ? stored.exams
-          : clone(seed.exams),
-
-      attempts: Array.isArray(stored.attempts)
-        ? stored.attempts
-        : [],
-
-      violations: Array.isArray(stored.violations)
-        ? stored.violations
-        : [],
-
-      theme: stored.theme === 'light'
-        ? 'light'
-        : 'dark'
-    };
-
-    if (!Array.isArray(repaired.exams) || !repaired.exams.length) {
-      repaired.exams = clone(seed.exams);
-    }
-
-    /*
-      Automatically create/repair examiner accounts for exams.
-    */
-    repaired.exams.forEach(exam => {
-      const username = String(
-        exam.examinerUsername || ''
-      ).trim();
-
-      if (!username) return;
-
-      const normalized = username.toLowerCase();
-
-      let account = repaired.users.find(
-        user =>
-          String(user.username || '')
-            .trim()
-            .toLowerCase() === normalized
-      );
-
-      if (!account) {
-        account = {
-          id: uid('user'),
-          username,
-          password: String(exam.examinerPassword || ''),
-          role: 'examiner',
-          name: username
-        };
-
-        repaired.users.push(account);
-      } else if (account.role !== 'admin') {
-        account.username = username;
-
-        if (exam.examinerPassword !== undefined) {
-          account.password = String(
-            exam.examinerPassword || ''
-          );
-        }
-
-        account.role = 'examiner';
-
-        if (!account.name) {
-          account.name = username;
-        }
-      }
-    });
-
-    safeSet(
-      localStorage,
-      KEY,
-      JSON.stringify(repaired)
-    );
-
-    return repaired;
-  }
-
-  function saveDB() {
-    safeSet(
-      localStorage,
-      KEY,
-      JSON.stringify(db)
-    );
-  }
-
-  function loadSession() {
-    try {
-      return JSON.parse(
-        safeGet(sessionStorage, SESSION) || 'null'
-      );
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function saveSession() {
-    if (session) {
-      safeSet(
-        sessionStorage,
-        SESSION,
-        JSON.stringify(session)
-      );
-    } else {
-      safeRemove(sessionStorage, SESSION);
-    }
-  }
-
-  /* ================================================================
-     VIEW MANAGEMENT
-  ================================================================ */
-
-  function showView(name) {
-    Object.values(views).forEach(view => {
-      if (view) view.hidden = true;
-    });
-
-    if (views[name]) {
-      views[name].hidden = false;
-    }
-
-    window.scrollTo(0, 0);
-  }
-
-  function toast(message, type = '') {
-    const container = $('#toast-container');
-
-    if (!container) return;
-
-    const item = document.createElement('div');
-
-    item.className = 'toast ' + type;
-    item.textContent = message;
-
-    container.appendChild(item);
-
-    setTimeout(() => {
-      item.remove();
-    }, 3000);
-  }
-
-  /* ================================================================
-     THEME
-  ================================================================ */
-
-  function applyTheme() {
-    document.body.classList.toggle(
-      'light',
-      db.theme === 'light'
-    );
-
-    [
-      'theme-toggle-login',
-      'theme-toggle-admin',
-      'theme-toggle-examiner'
-    ].forEach(id => {
-      const button = $('#' + id);
-
-      if (button) {
-        button.textContent =
-          db.theme === 'light'
-            ? '☾'
-            : '☼';
-      }
-    });
-  }
-
-  function toggleTheme() {
-    db.theme =
-      db.theme === 'light'
-        ? 'dark'
-        : 'light';
-
-    saveDB();
-    applyTheme();
-  }
-
-  [
-    'theme-toggle-login',
-    'theme-toggle-admin',
-    'theme-toggle-examiner'
-  ].forEach(id => {
-    $('#' + id)?.addEventListener(
-      'click',
-      toggleTheme
-    );
-  });
-
-  applyTheme();
-
-  /* ================================================================
-     AUTHENTICATION
-  ================================================================ */
-
-  const loginForm = $('#login-form');
-
-  if (loginForm) {
-    loginForm.addEventListener(
-      'submit',
-      async event => {
-        event.preventDefault();
-
-        const username =
-          $('#login-username')?.value.trim() || '';
-
-        const password =
-          $('#login-password')?.value || '';
-
-        const errorBox = $('#login-error');
-
-        if (!username || !password) {
-          if (errorBox) {
-            errorBox.textContent =
-              'Please enter your username and password.';
-            errorBox.hidden = false;
-          }
-
-          return;
-        }
-
-        const submitButton =
-          loginForm.querySelector(
-            'button[type="submit"]'
-          );
-
-        if (submitButton) {
-          submitButton.disabled = true;
-          submitButton.dataset.originalText =
-            submitButton.innerHTML;
-
-          submitButton.innerHTML =
-            'Signing in...';
-        }
-
-        await new Promise(
-          resolve => setTimeout(resolve, 250)
-        );
-
-        /*
-          Re-load database so newly created examiner
-          accounts are immediately available.
-        */
-        db = loadDB();
-
-        let user = db.users.find(
-          item =>
-            String(item.username || '')
-              .trim()
-              .toLowerCase() ===
-              username.toLowerCase() &&
-            String(item.password || '') ===
-              password
-        );
-
-        /*
-          Examiner fallback:
-          If an examiner account was created through
-          an exam but was not present in the users list,
-          rebuild it from the assigned exam.
-        */
-        if (!user) {
-          const assignedExam = db.exams.find(
-            exam =>
-              String(exam.examinerUsername || '')
-                .trim()
-                .toLowerCase() ===
-                username.toLowerCase() &&
-              String(exam.examinerPassword || '') ===
-                password
-          );
-
-          if (assignedExam) {
-            user = {
-              id: uid('user'),
-              username: username,
-              password: password,
-              role: 'examiner',
-              name: username
-            };
-
-            db.users.push(user);
-            saveDB();
-          }
-        }
-
-        if (!user) {
-          if (errorBox) {
-            errorBox.textContent =
-              'Invalid username or password.';
-            errorBox.hidden = false;
-            errorBox.classList.remove(
-              'login-error-shake'
-            );
-
-            void errorBox.offsetWidth;
-
-            errorBox.classList.add(
-              'login-error-shake'
-            );
-          }
-
-          if (submitButton) {
-            submitButton.disabled = false;
-            submitButton.innerHTML =
-              submitButton.dataset.originalText ||
-              'Sign In →';
-          }
-
-          return;
-        }
-
-        if (errorBox) {
-          errorBox.hidden = true;
-        }
-
-        session = {
-          userId: user.id,
-          username: user.username,
-          role: user.role,
-          loginAt: Date.now()
-        };
-
-        saveSession();
-
-        if (submitButton) {
-          submitButton.disabled = false;
-          submitButton.innerHTML =
-            submitButton.dataset.originalText ||
-            'Sign In →';
-        }
-
-        openPortal();
-      }
-    );
-  }
-
-  function currentUser() {
-    if (!session) return null;
-
-    return db.users.find(
-      user => user.id === session.userId
-    );
-  }
-
-  function openPortal() {
-    const user = currentUser();
-
-    if (!user) {
-      session = null;
-      saveSession();
-      showView('login');
-      return;
-    }
-
-    if (user.role === 'admin') {
-      openAdmin();
-    } else {
-      openExaminer();
-    }
-  }
-
-  function logout() {
-    if (examState?.active) {
-      toast(
-        'You cannot log out while an exam is active.',
-        'error'
-      );
-
-      return;
-    }
-
-    session = null;
-    saveSession();
-
-    currentExam = null;
-    examState = null;
-
-    showView('login');
-
-    $('#login-form')?.reset();
-  }
-
-  $('#admin-logout')?.addEventListener(
-    'click',
-    logout
+ }catch(e){
+  x={};
+ }
+
+ const users=Array.isArray(x.users)?x.users:[];
+
+ seed.users.forEach(su=>{
+  const existing=users.find(
+   u=>String(u?.username||'').trim().toLowerCase()===su.username.toLowerCase()
   );
 
-  $('#examiner-logout')?.addEventListener(
-    'click',
-    logout
+  if(!existing){
+   users.push(clone(su));
+  }else if(su.username==='admin'||su.username==='test'){
+   existing.username=su.username;
+   existing.password=su.password;
+   existing.role=su.role;
+   existing.name=su.name;
+  }
+ });
+
+ const repaired={
+  ...clone(seed),
+  ...x,
+  users,
+  exams:Array.isArray(x.exams)&&x.exams.length?x.exams:clone(seed.exams),
+  attempts:Array.isArray(x.attempts)?x.attempts:[],
+  violations:Array.isArray(x.violations)?x.violations:[],
+  theme:x.theme==='light'?'light':'dark'
+ };
+
+ if(!Array.isArray(repaired.exams)||!repaired.exams.length){
+  repaired.exams=clone(seed.exams);
+ }
+
+ repaired.exams.forEach(exam=>{
+  exam.timerEnabled=boolSetting(exam.timerEnabled,false);
+
+  exam.durationMinutes=Math.max(
+   1,
+   Math.round(Number(exam.durationMinutes)||60)
   );
 
-  /* ================================================================
-     SIDEBAR
-  ================================================================ */
+  exam.antiCheat=
+   exam.antiCheat===true ||
+   exam.antiCheat==='true' ||
+   exam.antiCheat===1 ||
+   exam.antiCheat==='1' ||
+   exam.antiCheat==='on';
 
-  $$('[data-toggle-sidebar]').forEach(button => {
-    button.addEventListener('click', () => {
-      const target =
-        $('#' + button.dataset.toggleSidebar);
+  exam.maxViolations=Math.max(
+   1,
+   Math.round(Number(exam.maxViolations)||3)
+  );
 
-      target?.classList.toggle('open');
-    });
-  });
+  exam.active=!(
+   exam.active===false ||
+   exam.active==='false' ||
+   exam.active===0 ||
+   exam.active==='0'
+  );
 
-  $$('[data-admin-page]').forEach(button => {
-    button.addEventListener('click', () => {
-      adminPage(button.dataset.adminPage);
-    });
-  });
+  const username=String(exam.examinerUsername||'').trim();
 
-  $$('[data-examiner-page]').forEach(button => {
-    button.addEventListener('click', () => {
-      examinerPage(button.dataset.examinerPage);
-    });
-  });
+  if(!username)return;
 
-  const pageTitles = {
-    dashboard: 'Dashboard',
-    exams: 'Exam Management',
-    submissions: 'Submissions',
-    violations: 'Violation Logs',
-    analytics: 'Analytics',
-    settings: 'Settings'
+  const normalized=username.toLowerCase();
+
+  let account=repaired.users.find(
+   u=>String(u?.username||'').trim().toLowerCase()===normalized
+  );
+
+  if(!account){
+   account={
+    id:uid('user'),
+    username:username,
+    password:String(exam.examinerPassword||''),
+    role:'examiner',
+    name:username
+   };
+
+   repaired.users.push(account);
+  }else if(account.role!=='admin'){
+   account.username=username;
+   account.password=String(
+    exam.examinerPassword??account.password??''
+   );
+   account.role='examiner';
+   account.name=account.name||username;
+  }
+ });
+
+ safeSet(
+  localStorage,
+  KEY,
+  JSON.stringify(repaired)
+ );
+
+ return repaired;
+}
+
+function saveDB(){
+ safeSet(
+  localStorage,
+  KEY,
+  JSON.stringify(db)
+ );
+}
+
+function loadSession(){
+ try{
+  return JSON.parse(
+   safeGet(sessionStorage,SESSION)||'null'
+  );
+ }catch(e){
+  return null;
+ }
+}
+
+function saveSession(){
+ if(session){
+  safeSet(
+   sessionStorage,
+   SESSION,
+   JSON.stringify(session)
+  );
+ }else{
+  safeRemove(sessionStorage,SESSION);
+ }
+}
+
+function uid(prefix='id'){
+ return prefix+'-'+
+  Date.now().toString(36)+'-'+
+  Math.random().toString(36).slice(2,8);
+}
+
+function esc(v=''){
+ return String(v).replace(
+  /[&<>'"]/g,
+  c=>({
+   '&':'&amp;',
+   '<':'&lt;',
+   '>':'&gt;',
+   "'":'&#39;',
+   '"':'&quot;'
+  }[c])
+ );
+}
+
+function fmtDate(ts){
+ return ts
+  ?new Date(ts).toLocaleString([],{
+    year:'numeric',
+    month:'short',
+    day:'numeric',
+    hour:'2-digit',
+    minute:'2-digit'
+   })
+  :'—';
+}
+
+function fmtTime(ts){
+ return ts
+  ?new Date(ts).toLocaleTimeString([],{
+    hour:'2-digit',
+    minute:'2-digit'
+   })
+  :'—';
+}
+
+function showView(name){
+ Object.values(views).forEach(v=>{
+  if(v)v.hidden=true;
+ });
+
+ if(views[name]){
+  views[name].hidden=false;
+ }
+
+ window.scrollTo(0,0);
+}
+
+function toast(msg,type=''){
+ const d=document.createElement('div');
+
+ d.className='toast '+type;
+ d.textContent=msg;
+
+ const container=$('#toast-container');
+
+ if(container){
+  container.appendChild(d);
+  setTimeout(()=>d.remove(),3000);
+ }
+}
+
+function showLoading(message='Please wait...'){
+ let o=document.getElementById('loading-overlay');
+
+ if(!o){
+  o=document.createElement('div');
+  o.id='loading-overlay';
+
+  o.innerHTML=
+   '<div class="loading-card">'+
+   '<div class="loading-spinner"></div>'+
+   '<strong id="loading-text">Please wait...</strong>'+
+   '</div>';
+
+  document.body.appendChild(o);
+
+  const st=document.createElement('style');
+
+  st.textContent=
+   '#loading-overlay{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;background:rgba(5,10,20,.72);backdrop-filter:blur(5px)}'+
+   '.loading-card{min-width:220px;padding:28px 30px;border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--text);display:flex;flex-direction:column;align-items:center;gap:14px;box-shadow:0 25px 70px rgba(0,0,0,.35)}'+
+   '.loading-spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:loadingSpin .75s linear infinite}'+
+   '@keyframes loadingSpin{to{transform:rotate(360deg)}}';
+
+  document.head.appendChild(st);
+ }
+
+ o.style.display='grid';
+
+ const t=document.getElementById('loading-text');
+
+ if(t){
+  t.textContent=message;
+ }
+}
+
+function hideLoading(){
+ const o=document.getElementById('loading-overlay');
+
+ if(o){
+  o.style.display='none';
+ }
+}
+
+function applyTheme(){
+ const light=db.theme==='light';
+
+ document.documentElement.dataset.theme=
+  light?'light':'dark';
+
+ document.body.classList.toggle('light',light);
+ document.body.classList.toggle('dark',!light);
+
+ [
+  'theme-toggle-login',
+  'theme-toggle-admin',
+  'theme-toggle-examiner'
+ ].forEach(id=>{
+  const b=$('#'+id);
+
+  if(b){
+   b.textContent=light?'☾':'☼';
+
+   b.setAttribute(
+    'aria-label',
+    light
+     ?'Switch to dark mode'
+     :'Switch to light mode'
+   );
+
+   b.title=light
+    ?'Switch to dark mode'
+    :'Switch to light mode';
+  }
+ });
+}
+
+function toggleTheme(){
+ db.theme=db.theme==='light'?'dark':'light';
+
+ saveDB();
+ applyTheme();
+}
+
+/* AUTH */
+
+function showLoginError(message){
+ const err=$('#login-error');
+
+ if(!err)return;
+
+ err.textContent=message;
+ err.hidden=false;
+ err.style.display='block';
+}
+
+function clearLoginError(){
+ const err=$('#login-error');
+
+ if(!err)return;
+
+ err.textContent='';
+ err.hidden=true;
+ err.style.display='none';
+}
+
+async function handleLogin(e){
+ if(e)e.preventDefault();
+
+ const loginForm=$('#login-form');
+
+ if(loginForm?.dataset.loggingIn==='1'){
+  return false;
+ }
+
+ if(loginForm){
+  loginForm.dataset.loggingIn='1';
+ }
+
+ showLoading('Signing in...');
+
+ await new Promise(resolve=>setTimeout(resolve,350));
+
+ clearLoginError();
+
+ const usernameEl=$('#login-username');
+ const passwordEl=$('#login-password');
+ const form=$('#login-form');
+
+ if(!usernameEl||!passwordEl){
+  showLoginError(
+   'Login form could not be loaded. Please refresh the page.'
+  );
+
+  hideLoading();
+
+  if(loginForm){
+   loginForm.dataset.loggingIn='';
+  }
+
+  return false;
+ }
+
+ const username=String(usernameEl.value||'').trim();
+ const password=String(passwordEl.value||'');
+
+ if(!username||!password){
+  showLoginError(
+   'Please enter both your username and password.'
+  );
+
+  (!username?usernameEl:passwordEl).focus();
+
+  hideLoading();
+
+  if(loginForm){
+   loginForm.dataset.loggingIn='';
+  }
+
+  return false;
+ }
+
+ db=loadDB();
+
+ const fallback={
+  admin:{
+   password:'123admin',
+   role:'admin',
+   name:'Administrator',
+   id:'u-admin'
+  },
+
+  test:{
+   password:'test',
+   role:'examiner',
+   name:'Test Examiner',
+   id:'u-test'
+  }
+ };
+
+ const key=username.toLowerCase();
+
+ let user=db.users.find(u=>
+  String(u?.username||'').trim().toLowerCase()===key &&
+  String(u?.password??'')===password &&
+  u?.role==='examiner'
+ );
+
+ if(!user){
+  const assignedExam=db.exams.find(ex=>
+   String(ex?.examinerUsername||'')
+    .trim()
+    .toLowerCase()===key &&
+   String(ex?.examinerPassword??'')===password
+  );
+
+  if(assignedExam){
+   const existing=db.users.find(u=>
+    String(u?.username||'')
+     .trim()
+     .toLowerCase()===key &&
+    u?.role!=='admin'
+   );
+
+   user=existing||{
+    id:uid('user'),
+    username:String(
+     assignedExam.examinerUsername
+    ).trim(),
+    password:String(
+     assignedExam.examinerPassword
+    ),
+    role:'examiner',
+    name:String(
+     assignedExam.examinerUsername
+    ).trim()
+   };
+
+   if(!db.users.some(u=>u.id===user.id)){
+    db.users.push(user);
+   }
+
+   saveDB();
+  }
+ }
+
+ if(!user&&fallback[key]&&fallback[key].password===password){
+  const f=fallback[key];
+
+  user={
+   id:f.id,
+   username:key,
+   password:f.password,
+   role:f.role,
+   name:f.name
+  };
+ }
+
+ if(!user){
+  showLoginError(
+   'Incorrect username or password. Please check your credentials and try again.'
+  );
+
+  passwordEl.value='';
+  passwordEl.focus();
+
+  hideLoading();
+
+  if(form){
+   form.classList.remove('login-error-shake');
+
+   void form.offsetWidth;
+
+   form.classList.add('login-error-shake');
+  }
+
+  if(loginForm){
+   loginForm.dataset.loggingIn='';
+  }
+
+  return false;
+ }
+
+ const stored=db.users.find(u=>
+  u.id===user.id ||
+  String(u.username||'').toLowerCase()===key
+ );
+
+ if(!stored){
+  db.users.push(clone(user));
+ }else{
+  stored.username=user.username;
+  stored.password=user.password;
+  stored.role=user.role;
+  stored.name=user.name;
+ }
+
+ saveDB();
+
+ session={
+  userId:user.id,
+  username:user.username,
+  role:user.role,
+  loginAt:Date.now()
+ };
+
+ saveSession();
+
+ currentExam=null;
+ examState=null;
+ violationOverlayOpen=false;
+
+ syncViolationOverlay();
+
+ openPortal();
+ hideLoading();
+
+ if(loginForm){
+  loginForm.dataset.loggingIn='';
+ }
+
+ return false;
+}
+
+function initAuthentication(){
+ const form=$('#login-form');
+
+ if(form&&form.dataset.authBound!=='1'){
+  form.addEventListener('submit',handleLogin);
+  form.dataset.authBound='1';
+ }
+}
+
+function currentUser(){
+ if(!session)return null;
+
+ return db.users.find(u=>
+  u.id===session.userId ||
+  String(u.username||'').toLowerCase()===
+  String(session.username||'').toLowerCase()
+ )||null;
+}
+
+function logout(){
+ clearInterval(timer);
+
+ timer=null;
+ currentExam=null;
+ examState=null;
+ violationOverlayOpen=false;
+
+ saveSession();
+
+ session=null;
+
+ exitFullscreen();
+
+ document.body.classList.remove('lockdown-active');
+
+ $('#exam-view')?.classList.remove(
+  'lockdown-active'
+ );
+
+ syncViolationOverlay();
+
+ showView('login');
+
+ clearLoginError();
+ hideLoading();
+}
+
+/* HELPERS */
+
+function boolSetting(v,fallback=false){
+ if(v===true||v===false)return v;
+
+ if(v==='true'||v==='1'||v===1||v==='on'){
+  return true;
+ }
+
+ if(v==='false'||v==='0'||v===0||v==='off'){
+  return false;
+ }
+
+ return fallback;
+}
+
+function clearBrokenSession(){
+ if(!session)return;
+
+ const u=currentUser();
+
+ if(!u){
+  session=null;
+  saveSession();
+ }
+}
+
+function getAssignedExamsForUser(u){
+ if(!u)return[];
+
+ const username=String(u.username||'')
+  .trim()
+  .toLowerCase();
+
+ return db.exams.filter(e=>
+  String(e.examinerUsername||'')
+   .trim()
+   .toLowerCase()===username ||
+  e.examinerUserId===u.id
+ );
+}
+
+function getUserAttempts(u){
+ if(!u)return[];
+
+ return db.attempts.filter(a=>
+  a.userId===u.id ||
+  String(a.username||'').toLowerCase()===
+  String(u.username||'').toLowerCase()
+ );
+}
+
+function getExamAttempts(examId,u){
+ const username=String(u?.username||'')
+  .toLowerCase();
+
+ return db.attempts.filter(a=>
+  a.examId===examId &&
+  (
+   !u ||
+   a.userId===u.id ||
+   String(a.username||'').toLowerCase()===username
+  )
+ );
+}
+
+function getCompletedAttempt(examId,u){
+ return getExamAttempts(examId,u).find(a=>
+  a.status==='Completed'||
+  a.status==='Time Expired'||
+  a.status==='Terminated'
+ );
+}
+
+function getActiveAttempt(examId,u){
+ return getExamAttempts(examId,u).find(a=>
+  a.status==='In Progress'
+ );
+}
+
+function isExamAvailable(e){
+ const now=Date.now();
+
+ if(!e.active)return false;
+
+ if(e.startAt){
+  const start=new Date(e.startAt).getTime();
+
+  if(Number.isFinite(start)&&now<start){
+   return false;
+  }
+ }
+
+ if(e.endAt){
+  const end=new Date(e.endAt).getTime();
+
+  if(Number.isFinite(end)&&now>end){
+   return false;
+  }
+ }
+
+ return true;
+}
+
+function examAvailabilityStatus(e){
+ const now=Date.now();
+
+ if(!e.active){
+  return 'Closed';
+ }
+
+ if(e.startAt){
+  const start=new Date(e.startAt).getTime();
+
+  if(Number.isFinite(start)&&now<start){
+   return 'Upcoming';
+  }
+ }
+
+ if(e.endAt){
+  const end=new Date(e.endAt).getTime();
+
+  if(Number.isFinite(end)&&now>end){
+   return 'Expired';
+  }
+ }
+
+ return 'Available';
+}
+
+/* PORTALS */
+
+function openPortal(){
+ const u=currentUser();
+
+ if(!u){
+  showView('login');
+  return;
+ }
+
+ if(u.role==='admin'){
+  openAdmin();
+ }else{
+  openExaminer();
+ }
+}
+
+function openAdmin(){
+ showView('admin');
+
+ db=loadDB();
+
+ renderAdminPage('dashboard');
+}
+
+function openExaminer(){
+ showView('examiner');
+
+ db=loadDB();
+
+ renderExaminerDashboard();
+}
+
+/* ADMIN */
+
+function adminPage(page){
+ $$('.admin-page').forEach(p=>{
+  p.classList.remove('active');
+  p.hidden=true;
+ });
+
+ $$('.nav-item').forEach(n=>{
+  n.classList.remove('active');
+ });
+
+ const target=$('#admin-'+page+'-page');
+
+ if(target){
+  target.classList.add('active');
+  target.hidden=false;
+ }
+
+ const nav=$(`[data-admin-page="${page}"]`);
+
+ if(nav){
+  nav.classList.add('active');
+ }
+
+ renderAdminPage(page);
+}
+
+function renderAdminPage(page='dashboard'){
+ db=loadDB();
+
+ const title=$('#admin-page-title');
+
+ if(title){
+  const titles={
+   dashboard:'Dashboard',
+   exams:'Exam Management',
+   submissions:'Submissions',
+   settings:'Settings'
   };
 
-  function openAdmin() {
-    const user = currentUser();
+  title.textContent=titles[page]||'Dashboard';
+ }
 
-    if (!user) return;
+ if(page==='dashboard'){
+  renderAdminDashboard();
+ }
 
-    if ($('#admin-user-name')) {
-      $('#admin-user-name').textContent =
-        user.name || user.username;
-    }
+ if(page==='exams'){
+  renderAdminExams();
+ }
 
-    if ($('#admin-user-role')) {
-      $('#admin-user-role').textContent =
-        'Administrator';
-    }
+ if(page==='submissions'){
+  renderAdminSubmissions();
+ }
 
-    if ($('#admin-avatar')) {
-      $('#admin-avatar').textContent =
-        (user.name || user.username)[0]
-          .toUpperCase();
-    }
+ if(page==='settings'){
+  renderSettings();
+ }
 
-    showView('admin');
-    adminPage('dashboard');
-  }
+ bindActions();
+}
 
-  function adminPage(page) {
-    $$('[data-admin-page]').forEach(button => {
-      button.classList.toggle(
-        'active',
-        button.dataset.adminPage === page
-      );
-    });
+function renderAdminDashboard(){
+ const target=$('#admin-dashboard-page');
 
-    $$('.admin-page').forEach(panel => {
-      panel.classList.remove('active');
-    });
+ if(!target)return;
 
-    const pageElement =
-      $('#admin-' + page + '-page');
+ const totalExams=db.exams.length;
 
-    if (pageElement) {
-      pageElement.classList.add('active');
-    }
+ const activeExams=db.exams.filter(e=>
+  e.active&&isExamAvailable(e)
+ ).length;
 
-    if ($('#admin-page-title')) {
-      $('#admin-page-title').textContent =
-        pageTitles[page] || page;
-    }
+ const totalAttempts=db.attempts.length;
 
-    $('#admin-sidebar')?.classList.remove('open');
+ const completed=db.attempts.filter(a=>
+  a.status==='Completed'
+ ).length;
 
-    renderAdminPage(page);
-  }
+ const inProgress=db.attempts.filter(a=>
+  a.status==='In Progress'
+ ).length;
 
-  function renderAdminPage(page) {
-    const renderers = {
-      dashboard: renderAdminDashboard,
-      exams: renderAdminExams,
-      submissions: renderSubmissions,
-      violations: renderViolations,
-      analytics: renderAnalytics,
-      settings: renderSettings
-    };
+ const totalViolations=db.violations.length;
 
-    (
-      renderers[page] ||
-      renderAdminDashboard
-    )();
-  }
+ target.innerHTML=`
+  <div class="page-heading">
+   <div>
+    <span class="eyebrow">OVERVIEW</span>
+    <h2>Dashboard</h2>
+    <p>Monitor examinations, submissions and proctoring activity.</p>
+   </div>
+   <button class="primary-btn" data-action="new-exam">
+    + Create Examination
+   </button>
+  </div>
 
-  function openExaminer() {
-    const user = currentUser();
+  <div class="dashboard-stats">
+   <div class="stat-card">
+    <span>EXAMS</span>
+    <strong>${totalExams}</strong>
+    <small>Total examinations</small>
+   </div>
 
-    if (!user) return;
+   <div class="stat-card">
+    <span>ACTIVE EXAMS</span>
+    <strong>${activeExams}</strong>
+    <small>Currently available</small>
+   </div>
 
-    if ($('#examiner-user-name')) {
-      $('#examiner-user-name').textContent =
-        user.name || user.username;
-    }
+   <div class="stat-card">
+    <span>SUBMISSIONS</span>
+    <strong>${totalAttempts}</strong>
+    <small>Total recorded sessions</small>
+   </div>
 
-    if ($('#examiner-avatar')) {
-      $('#examiner-avatar').textContent =
-        (user.name || user.username)[0]
-          .toUpperCase();
-    }
+   <div class="stat-card">
+    <span>COMPLETED</span>
+    <strong>${completed}</strong>
+    <small>Completed examinations</small>
+   </div>
 
-    showView('examiner');
-    renderExaminerDashboard();
-  }
+   <div class="stat-card">
+    <span>IN PROGRESS</span>
+    <strong>${inProgress}</strong>
+    <small>Active sessions</small>
+   </div>
 
-  function examinerPage() {
-    renderExaminerDashboard();
+   <div class="stat-card">
+    <span>VIOLATIONS</span>
+    <strong>${totalViolations}</strong>
+    <small>Logged security events</small>
+   </div>
+  </div>
 
-    $('#examiner-sidebar')?.classList.remove(
-      'open'
-    );
-  }
+  <div class="section-card">
+   <div class="section-card-head">
+    <div>
+     <span class="eyebrow">RECENT ACTIVITY</span>
+     <h3>Latest Submissions</h3>
+    </div>
+    <button class="secondary-btn"
+     data-action="view-submissions">
+     View All
+    </button>
+   </div>
 
-  /* ================================================================
-     ADMIN DASHBOARD
-  ================================================================ */
+   ${renderRecentSubmissions()}
+  </div>
+ `;
+}
 
-  function attemptCounts() {
-    const attempts = db.attempts;
+function renderRecentSubmissions(){
+ const rows=[...db.attempts]
+  .sort((a,b)=>
+   Number(b.startedAt||0)-Number(a.startedAt||0)
+  )
+  .slice(0,8);
 
-    return {
-      total: attempts.length,
+ if(!rows.length){
+  return '<div class="empty-state">No submissions yet.</div>';
+ }
 
-      inProgress:
-        attempts.filter(
-          item => item.status === 'In Progress'
-        ).length,
-
-      completed:
-        attempts.filter(
-          item => item.status === 'Completed'
-        ).length,
-
-      expired:
-        attempts.filter(
-          item => item.status === 'Time Expired'
-        ).length,
-
-      terminated:
-        attempts.filter(
-          item => item.status === 'Terminated'
-        ).length
-    };
-  }
-
-  function renderAdminDashboard() {
-    const counts = attemptCounts();
-
-    const avg =
-      db.attempts.length
-        ? (
-            db.attempts.reduce(
-              (sum, attempt) =>
-                sum + (attempt.violations || 0),
-              0
-            ) / db.attempts.length
-          ).toFixed(1)
-        : '0.0';
-
-    const completion =
-      counts.total
-        ? Math.round(
-            (counts.completed /
-              counts.total) *
-              100
-          )
-        : 0;
-
-    $('#admin-dashboard-page').innerHTML = `
-      <div class="page-head">
-        <div>
-          <span class="eyebrow">OVERVIEW</span>
-          <h3>Exam Dashboard</h3>
-          <p>
-            Monitor current activity, completion and security events.
-          </p>
-        </div>
-
-        <div class="actions">
-          <button
-            class="secondary-btn"
-            data-action="new-exam">
-            + Add Exam
-          </button>
-        </div>
-      </div>
-
-      <div class="stat-grid">
-        ${stat('Total Sessions', counts.total)}
-        ${stat('In Progress', counts.inProgress)}
-        ${stat('Completed', counts.completed, 'success')}
-        ${stat('Time Expired', counts.expired, 'warning')}
-        ${stat('Terminated', counts.terminated, 'danger')}
-        ${stat('Avg. Violations', avg)}
-      </div>
-
-      <div class="grid-2">
-
-        <div class="panel">
-          <h3>Overall Completion</h3>
-
-          <div class="progress-bar">
-            <div
-              class="progress-fill"
-              style="width:${completion}%">
-            </div>
-          </div>
-
-          <div class="progress-meta">
-            <span>${completion}% completed</span>
-            <span>
-              ${counts.completed} of
-              ${counts.total} sessions
-            </span>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h3>Exam Capacity</h3>
-
-          <div class="quick-grid">
-            <div class="quick-card">
-              <strong>${db.exams.length}</strong>
-              <span>Active exams</span>
-            </div>
-
-            <div class="quick-card">
-              <strong>
-                ${Math.max(
-                  0,
-                  MAX_EXAMS - db.exams.length
-                )}
-              </strong>
-              <span>Slots available</span>
-            </div>
-
-            <div class="quick-card">
-              <strong>${db.users.length}</strong>
-              <span>Total users</span>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <div
-        class="panel"
-        style="margin-top:18px">
-
-        <div
-          class="page-head"
-          style="margin-bottom:12px">
-
-          <div>
-            <h3>Recent Submissions</h3>
-            <p>
-              Latest exam sessions across all examiners.
-            </p>
-          </div>
-
-          <button
-            class="secondary-btn"
-            data-action="view-submissions">
-            View all
-          </button>
-        </div>
-
-        ${submissionTable(
-          db.attempts
-            .slice()
-            .sort(
-              (a, b) =>
-                (b.startedAt || 0) -
-                (a.startedAt || 0)
-            )
-            .slice(0, 8)
-        )}
-
-      </div>
-    `;
-
-    bindActions();
-  }
-
-  function stat(label, value, className = '') {
-    return `
-      <div class="stat-card ${className}">
-        <span class="stat-label">
-          ${esc(label)}
+ return `
+  <div class="table-wrap">
+   <table>
+    <thead>
+     <tr>
+      <th>Exam</th>
+      <th>Examiner</th>
+      <th>Status</th>
+      <th>Violations</th>
+      <th>Started</th>
+     </tr>
+    </thead>
+    <tbody>
+     ${rows.map(a=>`
+      <tr>
+       <td>${esc(a.examTitle||'—')}</td>
+       <td>${esc(a.username||'—')}</td>
+       <td>
+        <span class="status-badge">
+         ${esc(a.status||'—')}
         </span>
+       </td>
+       <td>${a.violations||0}</td>
+       <td>${fmtDate(a.startedAt)}</td>
+      </tr>
+     `).join('')}
+    </tbody>
+   </table>
+  </div>
+ `;
+}
 
-        <span class="stat-value">
-          ${esc(value)}
-        </span>
-      </div>
-    `;
+function renderAdminExams(){
+ const target=$('#admin-exams-page');
+
+ if(!target)return;
+
+ target.innerHTML=`
+  <div class="page-heading">
+   <div>
+    <span class="eyebrow">MANAGEMENT</span>
+    <h2>Exam Management</h2>
+    <p>Create and manage examinations.</p>
+   </div>
+
+   <button class="primary-btn"
+    data-action="new-exam">
+    + Create Examination
+   </button>
+  </div>
+
+  <div class="exam-admin-grid">
+   ${db.exams.map(e=>renderAdminExamCard(e)).join('')}
+  </div>
+ `;
+}
+
+function renderAdminExamCard(e){
+ const attempts=db.attempts.filter(a=>a.examId===e.id);
+
+ const completed=attempts.filter(a=>
+  a.status==='Completed'
+ ).length;
+
+ const active=attempts.filter(a=>
+  a.status==='In Progress'
+ ).length;
+
+ const status=examAvailabilityStatus(e);
+
+ return `
+  <article class="exam-admin-card">
+   <div class="exam-card-top">
+    <div>
+     <span class="eyebrow">${esc(status)}</span>
+     <h3>${esc(e.title)}</h3>
+    </div>
+
+    <span class="status-badge">
+     ${e.active?'ACTIVE':'INACTIVE'}
+    </span>
+   </div>
+
+   <p>${esc(e.description||'No description provided.')}</p>
+
+   <div class="exam-meta">
+    <span>
+     Duration:
+     <strong>
+      ${e.timerEnabled
+       ?esc(e.durationMinutes)+' min'
+       :'No Timer'}
+     </strong>
+    </span>
+
+    <span>
+     Anti-Cheat:
+     <strong>${e.antiCheat?'ON':'OFF'}</strong>
+    </span>
+
+    <span>
+     Submissions:
+     <strong>${attempts.length}</strong>
+    </span>
+
+    <span>
+     Active:
+     <strong>${active}</strong>
+    </span>
+
+    <span>
+     Completed:
+     <strong>${completed}</strong>
+    </span>
+   </div>
+
+   <div class="exam-actions">
+    <button class="secondary-btn"
+     data-action="edit-exam"
+     data-id="${esc(e.id)}">
+     Edit
+    </button>
+
+    <button class="danger-btn"
+     data-action="delete-exam"
+     data-id="${esc(e.id)}">
+     Delete
+    </button>
+   </div>
+  </article>
+ `;
+}
+
+function renderAdminSubmissions(){
+ const target=$('#admin-submissions-page');
+
+ if(!target){
+  const fallback=$('#admin-dashboard-page');
+
+  if(fallback){
+   fallback.innerHTML=`
+    <div class="page-heading">
+     <div>
+      <span class="eyebrow">REPORTING</span>
+      <h2>Submissions</h2>
+      <p>All examination sessions.</p>
+     </div>
+    </div>
+
+    ${renderSubmissionTable()}
+   `;
   }
 
-  function submissionTable(rows) {
-    if (!rows.length) {
-      return `
-        <div class="empty">
-          No exam sessions yet.
-        </div>
-      `;
-    }
+  return;
+ }
 
-    return `
-      <div class="table-wrap">
-        <table class="data-table">
+ target.innerHTML=`
+  <div class="page-heading">
+   <div>
+    <span class="eyebrow">REPORTING</span>
+    <h2>Submissions</h2>
+    <p>All examination sessions.</p>
+   </div>
+  </div>
 
-          <thead>
-            <tr>
-              <th>Examiner</th>
-              <th>Exam</th>
-              <th>Started</th>
-              <th>Ended</th>
-              <th>Status</th>
-              <th>Violations</th>
-              <th>Time Spent</th>
-            </tr>
-          </thead>
+  ${renderSubmissionTable()}
+ `;
+}
 
-          <tbody>
+function renderSubmissionTable(){
+ const rows=[...db.attempts]
+  .sort((a,b)=>
+   Number(b.startedAt||0)-Number(a.startedAt||0)
+  );
 
-            ${rows
-              .map(
-                attempt => `
-                <tr>
+ if(!rows.length){
+  return '<div class="empty-state">No submissions yet.</div>';
+ }
 
-                  <td>
-                    ${esc(attempt.username)}
-                  </td>
+ return `
+  <div class="section-card">
+   <div class="table-wrap">
+    <table>
+     <thead>
+      <tr>
+       <th>Exam</th>
+       <th>Username</th>
+       <th>Status</th>
+       <th>Violations</th>
+       <th>Started</th>
+       <th>Ended</th>
+      </tr>
+     </thead>
 
-                  <td>
-                    ${esc(attempt.examTitle)}
-                  </td>
+     <tbody>
+      ${rows.map(a=>`
+       <tr>
+        <td>${esc(a.examTitle||'—')}</td>
+        <td>${esc(a.username||'—')}</td>
+        <td>${esc(a.status||'—')}</td>
+        <td>${a.violations||0}</td>
+        <td>${fmtDate(a.startedAt)}</td>
+        <td>${fmtDate(a.endedAt)}</td>
+       </tr>
+      `).join('')}
+     </tbody>
+    </table>
+   </div>
+  </div>
+ `;
+}
 
-                  <td>
-                    ${fmtDate(attempt.startedAt)}
-                  </td>
+function renderSettings(){
+ const target=$('#admin-settings-page');
 
-                  <td>
-                    ${fmtDate(attempt.endedAt)}
-                  </td>
+ if(!target)return;
 
-                  <td>
-                    ${badge(attempt.status)}
-                  </td>
+ target.innerHTML=`
+  <div class="page-heading">
+   <div>
+    <span class="eyebrow">SYSTEM</span>
+    <h2>Settings</h2>
+    <p>Manage portal configuration.</p>
+   </div>
+  </div>
 
-                  <td>
-                    ${attempt.violations || 0}
-                  </td>
+  <div class="section-card">
+   <div class="section-card-head">
+    <div>
+     <h3>Users</h3>
+     <p class="muted">
+      Existing portal accounts.
+     </p>
+    </div>
+   </div>
 
-                  <td>
-                    ${formatDuration(
-                      attempt.durationSeconds || 0
-                    )}
-                  </td>
+   <div class="table-wrap">
+    <table>
+     <thead>
+      <tr>
+       <th>Username</th>
+       <th>Role</th>
+       <th>Name</th>
+       <th></th>
+      </tr>
+     </thead>
 
-                </tr>
-              `
-              )
-              .join('')}
-
-          </tbody>
-
-        </table>
-      </div>
-    `;
-  }
-
-  function badge(status) {
-    const map = {
-      Completed: 'green',
-      'Time Expired': 'yellow',
-      Terminated: 'red',
-      'In Progress': 'blue',
-      Locked: 'gray',
-      Available: 'green',
-      Unavailable: 'gray'
-    };
-
-    return `
-      <span class="badge ${
-        map[status] || 'gray'
-      }">
-        ${esc(status)}
-      </span>
-    `;
-  }
-
-  /* ================================================================
-     EXAM MANAGEMENT
-  ================================================================ */
-
-  function renderAdminExams() {
-    const slots =
-      MAX_EXAMS - db.exams.length;
-
-    $('#admin-exams-page').innerHTML = `
-      <div class="page-head">
-
-        <div>
-          <span class="eyebrow">
-            EXAM MANAGEMENT
-          </span>
-
-          <h3>Exams</h3>
-
-          <p>
-            Create up to ${MAX_EXAMS} exams.
-            Deleting an exam releases its slot.
-          </p>
-
-          <div class="slot-note">
-            ${db.exams.length}/${MAX_EXAMS}
-            slots used
-          </div>
-        </div>
-
-        <div class="actions">
-          <button
-            class="primary-btn"
-            data-action="new-exam"
-            ${slots <= 0 ? 'disabled' : ''}>
-            + Add New Exam
-          </button>
-        </div>
-
-      </div>
-
-      <div class="exam-grid">
-        ${
-          db.exams.length
-            ? db.exams
-                .map(examCard)
-                .join('')
-            : `
-              <div
-                class="panel"
-                style="grid-column:1/-1">
-                <div class="empty">
-                  No exams created yet.
-                </div>
-              </div>
-            `
-        }
-      </div>
-    `;
-
-    bindActions();
-  }
-
-  function examCard(exam) {
-    const availability =
-      getAvailability(exam);
-
-    const attempts =
-      db.attempts.filter(
-        attempt =>
-          attempt.examId === exam.id
-      );
-
-    return `
-      <article class="exam-card">
-
-        <div class="exam-card-top">
-
-          <span class="badge ${
-            exam.active
-              ? 'green'
-              : 'gray'
-          }">
-            ${exam.active
-              ? 'ACTIVE'
-              : 'DISABLED'}
-          </span>
-
-          ${badge(availability.status)}
-
-        </div>
-
-        <h3>
-          ${esc(exam.title)}
-        </h3>
-
-        <p>
-          ${esc(
-            exam.description ||
-              'No description provided.'
-          )}
-        </p>
-
-        <div class="exam-meta">
-
-          <div class="meta-box">
-            <span>Timer</span>
-            <strong>
-              ${
-                boolSetting(
-                  exam.timerEnabled
-                )
-                  ? `${exam.durationMinutes} min`
-                  : 'Off'
-              }
-            </strong>
-          </div>
-
-          <div class="meta-box">
-            <span>Anti-cheat</span>
-            <strong>
-              ${
-                boolSetting(
-                  exam.antiCheat
-                )
-                  ? 'On'
-                  : 'Off'
-              }
-            </strong>
-          </div>
-
-          <div class="meta-box">
-            <span>Violations</span>
-            <strong>
-              ${exam.maxViolations}
-            </strong>
-          </div>
-
-          <div class="meta-box">
-            <span>Attempts</span>
-            <strong>
-              ${attempts.length}
-            </strong>
-          </div>
-
-        </div>
-
-        <div class="exam-card-actions">
-
-          <button
-            class="secondary-btn"
-            data-action="edit-exam"
-            data-id="${exam.id}">
-            Edit
-          </button>
-
-          <button
-            class="danger-btn"
-            data-action="delete-exam"
-            data-id="${exam.id}">
+     <tbody>
+      ${db.users.map(u=>`
+       <tr>
+        <td>${esc(u.username)}</td>
+        <td>${esc(u.role)}</td>
+        <td>${esc(u.name||'—')}</td>
+        <td>
+         ${
+          u.role==='admin'
+          ?''
+          :`
+           <button class="danger-btn"
+            data-action="delete-user"
+            data-id="${esc(u.id)}">
             Delete
-          </button>
-
-        </div>
-
-      </article>
-    `;
-  }
-
-  function getAvailability(exam) {
-    if (!exam.active) {
-      return {
-        status: 'Unavailable'
-      };
-    }
-
-    const now = Date.now();
-
-    const start =
-      exam.startAt
-        ? new Date(exam.startAt).getTime()
-        : null;
-
-    const end =
-      exam.endAt
-        ? new Date(exam.endAt).getTime()
-        : null;
-
-    if (start && now < start) {
-      return {
-        status: 'Unavailable'
-      };
-    }
-
-    if (end && now > end) {
-      return {
-        status: 'Unavailable'
-      };
-    }
-
-    return {
-      status: 'Available'
-    };
-  }
-
-  function openExamModal(id = null) {
-    const exam = id
-      ? db.exams.find(
-          item => item.id === id
-        )
-      : null;
-
-    if (
-      !exam &&
-      db.exams.length >= MAX_EXAMS
-    ) {
-      toast(
-        `Maximum of ${MAX_EXAMS} exams reached. Delete an exam to free a slot.`,
-        'error'
-      );
-
-      return;
-    }
-
-    const data =
-      exam ||
-      {
-        title: '',
-        description: '',
-        formUrl: '',
-        examinerUsername: 'test',
-        examinerPassword: 'test',
-        antiCheat: true,
-        maxViolations: 3,
-        timerEnabled: true,
-        durationMinutes: 60,
-        startAt: '',
-        endAt: '',
-        active: true
-      };
-
-    const isoLocal = value => {
-      if (!value) return '';
-
-      const date = new Date(value);
-
-      if (Number.isNaN(date.getTime())) {
-        return '';
-      }
-
-      return date
-        .toISOString()
-        .slice(0, 16);
-    };
-
-    $('#modal-root').hidden = false;
-
-    $('#modal-root').innerHTML = `
-      <div class="modal">
-
-        <div class="modal-head">
-
-          <div>
-            <span class="eyebrow">
-              ${
-                exam
-                  ? 'EDIT EXAM'
-                  : 'NEW EXAM'
-              }
-            </span>
-
-            <h3>
-              ${
-                exam
-                  ? 'Update examination'
-                  : 'Create examination'
-              }
-            </h3>
-          </div>
-
-          <button
-            class="close-btn"
-            data-action="close-modal">
-            ×
-          </button>
-
-        </div>
-
-        <form id="exam-form">
-
-          <div class="modal-body">
-
-            <div class="form-grid">
-
-              <div class="field full-span">
-                <label class="form-label">
-                  Exam Title
-                </label>
-
-                <input
-                  name="title"
-                  required
-                  value="${esc(data.title)}"
-                  placeholder="e.g. HR Certification Examination">
-              </div>
-
-              <div class="field full-span">
-
-                <label class="form-label">
-                  Description
-                </label>
-
-                <textarea
-                  name="description"
-                  rows="2"
-                  placeholder="Short description">${esc(
-                    data.description
-                  )}</textarea>
-
-              </div>
-
-              <div class="field full-span">
-
-                <label class="form-label">
-                  Google Forms Link
-                </label>
-
-                <input
-                  name="formUrl"
-                  type="url"
-                  required
-                  value="${esc(data.formUrl)}"
-                  placeholder="https://docs.google.com/forms/d/e/.../viewform?embedded=true">
-
-                <div class="helper">
-                  Use the Google Form's embeddable/viewform URL.
-                </div>
-
-              </div>
-
-              <div class="field">
-
-                <label class="form-label">
-                  Examiner Username
-                </label>
-
-                <input
-                  name="examinerUsername"
-                  required
-                  value="${esc(
-                    data.examinerUsername
-                  )}">
-
-              </div>
-
-              <div class="field">
-
-                <label class="form-label">
-                  Examiner Password
-                </label>
-
-                <input
-                  name="examinerPassword"
-                  required
-                  value="${esc(
-                    data.examinerPassword
-                  )}">
-
-              </div>
-
-              <div class="field">
-
-                <label class="form-label">
-                  Maximum Violations
-                </label>
-
-                <input
-                  name="maxViolations"
-                  type="number"
-                  min="1"
-                  max="99"
-                  required
-                  value="${data.maxViolations}">
-
-              </div>
-
-              <div class="field">
-
-                <label class="form-label">
-                  Timer Duration (minutes)
-                </label>
-
-                <input
-                  name="durationMinutes"
-                  type="number"
-                  min="1"
-                  max="1440"
-                  required
-                  value="${data.durationMinutes}">
-
-              </div>
-
-              <div class="field full-span">
-
-                <div class="checkbox-row">
-
-                  <input
-                    id="antiCheat"
-                    name="antiCheat"
-                    type="checkbox"
-                    ${
-                      boolSetting(
-                        data.antiCheat
-                      )
-                        ? 'checked'
-                        : ''
-                    }>
-
-                  <label for="antiCheat">
-                    Enable anti-cheat monitoring
-                  </label>
-
-                </div>
-
-                <div class="helper">
-                  Detects tab visibility changes,
-                  focus loss, fullscreen exits and
-                  restricted shortcuts.
-                </div>
-
-              </div>
-
-              <div class="field full-span">
-
-                <div class="checkbox-row">
-
-                  <input
-                    id="timerEnabled"
-                    name="timerEnabled"
-                    type="checkbox"
-                    ${
-                      boolSetting(
-                        data.timerEnabled
-                      )
-                        ? 'checked'
-                        : ''
-                    }>
-
-                  <label for="timerEnabled">
-                    Enable examination timer
-                  </label>
-
-                </div>
-
-              </div>
-
-              <div class="field">
-
-                <label class="form-label">
-                  Available From
-                </label>
-
-                <input
-                  name="startAt"
-                  type="datetime-local"
-                  value="${isoLocal(
-                    data.startAt
-                  )}">
-
-                <div class="helper">
-                  Leave blank for immediately available.
-                </div>
-
-              </div>
-
-              <div class="field">
-
-                <label class="form-label">
-                  Available Until
-                </label>
-
-                <input
-                  name="endAt"
-                  type="datetime-local"
-                  value="${isoLocal(
-                    data.endAt
-                  )}">
-
-                <div class="helper">
-                  Leave blank for no end date.
-                </div>
-
-              </div>
-
-              <div class="field full-span">
-
-                <div class="checkbox-row">
-
-                  <input
-                    id="active"
-                    name="active"
-                    type="checkbox"
-                    ${
-                      data.active
-                        ? 'checked'
-                        : ''
-                    }>
-
-                  <label for="active">
-                    Exam is active
-                  </label>
-
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          <div class="modal-footer">
-
-            <button
-              type="button"
-              class="secondary-btn"
-              data-action="close-modal">
-              Cancel
-            </button>
-
-            <button
-              type="submit"
-              class="primary-btn">
-              ${
-                exam
-                  ? 'Save Changes'
-                  : 'Create Exam'
-              }
-            </button>
-
-          </div>
-
-        </form>
-
+           </button>
+          `
+         }
+        </td>
+       </tr>
+      `).join('')}
+     </tbody>
+    </table>
+   </div>
+  </div>
+ `;
+}
+
+/* EXAMINER */
+
+function renderExaminerDashboard(){
+ db=loadDB();
+
+ const u=currentUser();
+
+ if(!u){
+  logout();
+  return;
+ }
+
+ const exams=getAssignedExamsForUser(u);
+ const attempts=getUserAttempts(u);
+
+ const completed=attempts.filter(a=>
+  a.status==='Completed'||
+  a.status==='Time Expired'||
+  a.status==='Terminated'
+ ).length;
+
+ const violations=attempts.reduce(
+  (sum,a)=>sum+(Number(a.violations)||0),
+  0
+ );
+
+ const timeSpent=attempts.reduce(
+  (sum,a)=>sum+(Number(a.durationSeconds)||0),
+  0
+ );
+
+ const progress=exams.length
+  ?Math.min(100,Math.round(
+   (completed/exams.length)*100
+  ))
+  :0;
+
+ const target=$('#examiner-dashboard-page');
+
+ if(!target)return;
+
+ target.innerHTML=`
+  <div class="page-heading">
+   <div>
+    <span class="eyebrow">EXAMINEE PORTAL</span>
+    <h2>Available Examinations</h2>
+    <p>
+     Select an examination assigned to your account.
+    </p>
+   </div>
+  </div>
+
+  <div class="examiner-stats">
+   <div class="metric-panel section-card">
+    <span class="metric-label">TESTS TAKEN</span>
+    <strong>${completed}</strong>
+    <div class="progress-track">
+     <div class="progress-fill"
+      style="width:${progress}%"></div>
+    </div>
+    <span class="metric-sub">
+     ${progress}% completion
+    </span>
+   </div>
+
+   <div class="metric-panel section-card">
+    <span class="metric-label">VIOLATIONS</span>
+    <strong>${violations}</strong>
+    <span class="metric-sub">
+     Total logged security events
+    </span>
+   </div>
+
+   <div class="metric-panel section-card">
+    <span class="metric-label">TOTAL TIME SPENT</span>
+    <strong>${formatDuration(timeSpent)}</strong>
+    <span class="metric-sub">
+     Across examination sessions
+    </span>
+   </div>
+  </div>
+
+  <div class="exam-list">
+   ${
+    exams.length
+    ?exams.map(e=>
+      renderExaminerExamCard(e,u)
+     ).join('')
+    :`
+     <div class="empty-state">
+      No examinations are currently assigned
+      to your account.
+     </div>
+    `
+   }
+  </div>
+ `;
+
+ bindActions();
+}
+
+function renderExaminerExamCard(e,u){
+ const completed=getCompletedAttempt(e.id,u);
+ const active=getActiveAttempt(e.id,u);
+ const status=examAvailabilityStatus(e);
+
+ let action='';
+
+ if(completed){
+  action=`
+   <button class="secondary-btn" disabled>
+    Completed
+   </button>
+  `;
+ }else if(active){
+  action=`
+   <button class="primary-btn"
+    data-action="start-exam"
+    data-id="${esc(e.id)}">
+    Resume Exam
+   </button>
+  `;
+ }else if(status==='Available'){
+  action=`
+   <button class="primary-btn"
+    data-action="start-exam"
+    data-id="${esc(e.id)}">
+    Start Exam
+   </button>
+  `;
+ }else{
+  action=`
+   <button class="secondary-btn" disabled>
+    ${esc(status)}
+   </button>
+  `;
+ }
+
+ return `
+  <article class="exam-card">
+   <div class="exam-card-head">
+    <div>
+     <span class="eyebrow">${esc(status)}</span>
+     <h3>${esc(e.title)}</h3>
+    </div>
+
+    <span class="status-badge">
+     ${completed
+      ?'COMPLETED'
+      :active
+       ?'IN PROGRESS'
+       :esc(status.toUpperCase())}
+    </span>
+   </div>
+
+   <p>${esc(e.description||'')}</p>
+
+   <div class="exam-meta">
+    <span>
+     Duration:
+     <strong>
+      ${e.timerEnabled
+       ?esc(e.durationMinutes)+' minutes'
+       :'No Timer'}
+     </strong>
+    </span>
+
+    <span>
+     Anti-Cheat:
+     <strong>${e.antiCheat?'Enabled':'Disabled'}</strong>
+    </span>
+
+    <span>
+     Max Violations:
+     <strong>${e.maxViolations}</strong>
+    </span>
+   </div>
+
+   ${
+    e.startAt||e.endAt
+    ?`
+     <div class="exam-date-range">
+      <span>AVAILABILITY</span>
+      <strong>
+       ${fmtDate(e.startAt)}
+       —
+       ${fmtDate(e.endAt)}
+      </strong>
+     </div>
+    `
+    :''
+   }
+
+   <div class="exam-actions">
+    ${action}
+   </div>
+  </article>
+ `;
+}
+
+function formatDuration(seconds){
+ const s=Math.max(0,Number(seconds)||0);
+
+ const hours=Math.floor(s/3600);
+ const minutes=Math.floor((s%3600)/60);
+ const secs=Math.floor(s%60);
+
+ if(hours){
+  return `${hours}h ${minutes}m`;
+ }
+
+ if(minutes){
+  return `${minutes}m`;
+ }
+
+ return `${secs}s`;
+}
+
+/* EXAM START */
+
+function startExam(id){
+ const e=db.exams.find(x=>x.id===id);
+
+ if(!e)return;
+
+ openStartInstructions(e,false);
+}
+
+function openStartInstructions(e,resume=false){
+ const old=document.getElementById('start-modal');
+
+ if(old)old.remove();
+
+ const modal=document.createElement('div');
+
+ modal.id='start-modal';
+ modal.className='modal-backdrop';
+
+ modal.innerHTML=`
+  <div class="modal-card">
+   <button class="modal-close"
+    data-action="close-modal">
+    ×
+   </button>
+
+   <span class="eyebrow">
+    ${resume?'RESUME EXAMINATION':'EXAMINATION'}
+   </span>
+
+   <h2>${esc(e.title)}</h2>
+
+   <p class="muted">
+    ${esc(e.description||'')}
+   </p>
+
+   ${
+    e.startAt||e.endAt
+    ?`
+     <div class="exam-date-range">
+      <span>AVAILABILITY</span>
+      <strong>
+       ${fmtDate(e.startAt)}
+       —
+       ${fmtDate(e.endAt)}
+      </strong>
+     </div>
+    `
+    :''
+   }
+
+   <div class="instruction-list">
+    ${
+     e.timerEnabled
+     ?`
+      <div class="instruction-item">
+       <strong>Timer</strong>
+       <span>
+        You have ${esc(e.durationMinutes)}
+        minutes to complete the examination.
+       </span>
       </div>
-    `;
-
-    $('#exam-form').addEventListener(
-      'submit',
-      event => {
-        event.preventDefault();
-
-        const formData =
-          new FormData(event.target);
-
-        const formUrl =
-          String(
-            formData.get('formUrl') || ''
-          ).trim();
-
-        if (
-          !/^https:\/\/(docs\.google\.com|forms\.google\.com)\//i.test(
-            formUrl
-          )
-        ) {
-          toast(
-            'Please enter a valid Google Forms URL.',
-            'error'
-          );
-
-          return;
-        }
-
-        const title =
-          String(
-            formData.get('title') || ''
-          ).trim();
-
-        const examinerUsername =
-          String(
-            formData.get(
-              'examinerUsername'
-            ) || ''
-          ).trim();
-
-        const examinerPassword =
-          String(
-            formData.get(
-              'examinerPassword'
-            ) || ''
-          );
-
-        if (
-          !title ||
-          !examinerUsername ||
-          !examinerPassword
-        ) {
-          toast(
-            'Complete all required fields.',
-            'error'
-          );
-
-          return;
-        }
-
-        const startInput =
-          formData.get('startAt');
-
-        const endInput =
-          formData.get('endAt');
-
-        const object = {
-          title,
-
-          description:
-            String(
-              formData.get(
-                'description'
-              ) || ''
-            ).trim(),
-
-          formUrl,
-
-          examinerUsername,
-          examinerPassword,
-
-          antiCheat:
-            formData.has('antiCheat'),
-
-          maxViolations:
-            Math.max(
-              1,
-              Number(
-                formData.get(
-                  'maxViolations'
-                )
-              ) || 3
-            ),
-
-          timerEnabled:
-            formData.has('timerEnabled'),
-
-          durationMinutes:
-            Math.max(
-              1,
-              Number(
-                formData.get(
-                  'durationMinutes'
-                )
-              ) || 60
-            ),
-
-          startAt:
-            startInput
-              ? new Date(
-                  startInput
-                ).toISOString()
-              : '',
-
-          endAt:
-            endInput
-              ? new Date(
-                  endInput
-                ).toISOString()
-              : '',
-
-          active:
-            formData.has('active')
-        };
-
-        if (object.endAt && object.startAt) {
-          if (
-            new Date(
-              object.endAt
-            ).getTime() <
-            new Date(
-              object.startAt
-            ).getTime()
-          ) {
-            toast(
-              'The end date must be after the start date.',
-              'error'
-            );
-
-            return;
-          }
-        }
-
-        if (exam) {
-          Object.assign(
-            exam,
-            object
-          );
-        } else {
-          db.exams.push({
-            id: uid('exam'),
-            ...object,
-            createdAt: Date.now(),
-            createdBy:
-              currentUser()?.id ||
-              'u-admin'
-          });
-        }
-
-        /*
-          Create/update examiner account.
-        */
-        const existingUser =
-          db.users.find(
-            user =>
-              String(
-                user.username || ''
-              )
-                .trim()
-                .toLowerCase() ===
-              examinerUsername.toLowerCase()
-          );
-
-        if (existingUser) {
-          if (
-            existingUser.role !==
-            'admin'
-          ) {
-            existingUser.username =
-              examinerUsername;
-
-            existingUser.password =
-              examinerPassword;
-
-            existingUser.role =
-              'examiner';
-
-            if (!existingUser.name) {
-              existingUser.name =
-                examinerUsername;
-            }
-          }
-        } else {
-          db.users.push({
-            id: uid('user'),
-            username:
-              examinerUsername,
-            password:
-              examinerPassword,
-            role: 'examiner',
-            name:
-              examinerUsername
-          });
-        }
-
-        saveDB();
-
-        closeModal();
-
-        renderAdminExams();
-
-        toast(
-          exam
-            ? 'Exam updated successfully.'
-            : 'Exam created successfully.',
-          'success'
-        );
-      }
-    );
-
-    bindActions();
-  }
-
-  function deleteExam(id) {
-    const exam =
-      db.exams.find(
-        item => item.id === id
-      );
-
-    if (!exam) return;
-
-    const count =
-      db.attempts.filter(
-        attempt =>
-          attempt.examId === id
-      ).length;
-
-    const confirmed = confirm(
-      `Delete "${exam.title}"?\n\n` +
-      `This releases an exam slot. ` +
-      `${count} historical attempt(s) will remain in the reports.`
-    );
-
-    if (!confirmed) return;
-
-    db.exams =
-      db.exams.filter(
-        item => item.id !== id
-      );
-
-    saveDB();
-
-    renderAdminExams();
-
-    toast(
-      'Exam deleted. The slot is now available.',
-      'success'
-    );
-  }
-
-  function closeModal() {
-    const modal = $('#modal-root');
-
-    if (!modal) return;
-
-    modal.hidden = true;
-    modal.innerHTML = '';
-  }
-
-  /* ================================================================
-     SUBMISSIONS
-  ================================================================ */
-
-  function renderSubmissions() {
-    const sorted =
-      db.attempts
-        .slice()
-        .sort(
-          (a, b) =>
-            (b.startedAt || 0) -
-            (a.startedAt || 0)
-        );
-
-    $('#admin-submissions-page').innerHTML = `
-      <div class="page-head">
-
-        <div>
-          <span class="eyebrow">
-            MONITORING
-          </span>
-
-          <h3>Submissions</h3>
-
-          <p>
-            Current and completed examination sessions.
-          </p>
-        </div>
-
-        <div class="actions">
-
-          <button
-            class="secondary-btn"
-            data-action="refresh-admin">
-            Refresh
-          </button>
-
-        </div>
-
+     `
+     :`
+      <div class="instruction-item">
+       <strong>No Timer</strong>
+       <span>
+        This examination does not have
+        a time limit.
+       </span>
       </div>
+     `
+    }
 
-      <div class="panel">
-        ${submissionTable(sorted)}
+    ${
+     e.antiCheat
+     ?`
+      <div class="instruction-item">
+       <strong>Anti-Cheat Enabled</strong>
+       <span>
+        Tab switching, focus loss,
+        fullscreen exit and restricted
+        shortcuts may be logged.
+       </span>
       </div>
-    `;
-
-    bindActions();
-  }
-
-  /* ================================================================
-     VIOLATIONS
-  ================================================================ */
-
-  function renderViolations() {
-    const rows =
-      db.violations
-        .slice()
-        .sort(
-          (a, b) =>
-            b.timestamp -
-            a.timestamp
-        );
-
-    $('#admin-violations-page').innerHTML = `
-      <div class="page-head">
-
-        <div>
-          <span class="eyebrow">
-            SECURITY
-          </span>
-
-          <h3>Violation Logs</h3>
-
-          <p>
-            Every detected event is recorded for review.
-          </p>
-        </div>
-
+     `
+     :`
+      <div class="instruction-item">
+       <strong>Anti-Cheat Disabled</strong>
+       <span>
+        Proctoring restrictions are disabled
+        for this examination.
+       </span>
       </div>
-
-      <div class="panel">
-
-        ${
-          rows.length
-            ? `
-              <div class="table-wrap">
-
-                <table class="data-table">
-
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Examiner</th>
-                      <th>Exam</th>
-                      <th>#</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-
-                    ${rows
-                      .map(
-                        violation => `
-                        <tr>
-
-                          <td>
-                            ${fmtDate(
-                              violation.timestamp
-                            )}
-                          </td>
-
-                          <td>
-                            ${esc(
-                              violation.username
-                            )}
-                          </td>
-
-                          <td>
-                            ${esc(
-                              violation.examTitle
-                            )}
-                          </td>
-
-                          <td>
-                            ${violation.number}
-                          </td>
-
-                          <td>
-                            ${esc(
-                              violation.reason
-                            )}
-                          </td>
-
-                        </tr>
-                      `
-                      )
-                      .join('')}
-
-                  </tbody>
-
-                </table>
-
-              </div>
-            `
-            : `
-              <div class="empty">
-                No violations logged yet.
-              </div>
-            `
-        }
-
-      </div>
-    `;
-  }
-
-  /* ================================================================
-     ANALYTICS
-  ================================================================ */
-
-  function renderAnalytics() {
-    const counts =
-      attemptCounts();
-
-    const total =
-      counts.total || 1;
-
-    const avg =
-      db.attempts.length
-        ? (
-            db.attempts.reduce(
-              (sum, attempt) =>
-                sum +
-                (attempt.violations || 0),
-              0
-            ) /
-            db.attempts.length
-          ).toFixed(2)
-        : '0.00';
-
-    const byExam =
-      db.exams
-        .map(exam => ({
-          exam,
-          count:
-            db.attempts.filter(
-              attempt =>
-                attempt.examId ===
-                exam.id
-            ).length
-        }))
-        .sort(
-          (a, b) =>
-            b.count -
-            a.count
-        );
-
-    $('#admin-analytics-page').innerHTML = `
-      <div class="page-head">
-
-        <div>
-          <span class="eyebrow">
-            REPORTING
-          </span>
-
-          <h3>Analytics</h3>
-
-          <p>
-            Performance and security overview.
-          </p>
-        </div>
-
-      </div>
-
-      <div class="kpi-grid">
-
-        ${kpi(
-          'Completion Rate',
-          Math.round(
-            (counts.completed /
-              total) *
-              100
-          ) + '%'
-        )}
-
-        ${kpi(
-          'In Progress',
-          counts.inProgress
-        )}
-
-        ${kpi(
-          'Termination Rate',
-          Math.round(
-            (counts.terminated /
-              total) *
-              100
-          ) + '%'
-        )}
-
-        ${kpi(
-          'Avg. Violations',
-          avg
-        )}
-
-      </div>
-
-      <div class="grid-2">
-
-        <div class="panel">
-
-          <h3>
-            Session Status
-          </h3>
-
-          ${[
-            [
-              'Completed',
-              counts.completed
-            ],
-            [
-              'In Progress',
-              counts.inProgress
-            ],
-            [
-              'Time Expired',
-              counts.expired
-            ],
-            [
-              'Terminated',
-              counts.terminated
-            ]
-          ]
-            .map(
-              ([label, count]) =>
-                chart(
-                  label,
-                  count,
-                  counts.total
-                )
-            )
-            .join('')}
-
-        </div>
-
-        <div class="panel">
-
-          <h3>
-            Sessions by Exam
-          </h3>
-
-          ${
-            byExam.length
-              ? byExam
-                  .map(item =>
-                    chart(
-                      item.exam.title,
-                      item.count,
-                      counts.total
-                    )
-                  )
-                  .join('')
-              : `
-                <div class="empty">
-                  No exams.
-                </div>
-              `
-          }
-
-        </div>
-
-      </div>
-
-      <div
-        class="panel"
-        style="margin-top:18px">
-
-        <h3>
-          Violation Activity
-        </h3>
-
-        <p
-          class="muted"
-          style="font-size:12px">
-
-          ${db.violations.length}
-          security events have been recorded
-          across
-          ${db.attempts.length}
-          session(s).
-
-        </p>
-
-        <div class="progress-bar">
-
-          <div
-            class="progress-fill"
-            style="
-              width:${Math.min(
-                100,
-                db.violations.length * 5
-              )}%
-            ">
-          </div>
-
-        </div>
-
-      </div>
-    `;
-  }
-
-  function kpi(label, value) {
-    return `
-      <div class="kpi">
-        <span>${esc(label)}</span>
-        <strong>${esc(value)}</strong>
-      </div>
-    `;
-  }
-
-  function chart(label, number, total) {
-    const percent =
-      total
-        ? Math.round(
-            (number / total) *
-              100
-          )
-        : 0;
-
-    return `
-      <div class="chart-row">
-
-        <div>
-
-          <div class="chart-label">
-            ${esc(label)}
-          </div>
-
-          <div class="bar-track">
-
-            <div
-              class="bar-value"
-              style="width:${percent}%">
-            </div>
-
-          </div>
-
-        </div>
-
-        <div class="chart-number">
-          ${number}
-          (${percent}%)
-        </div>
-
-      </div>
-    `;
-  }
-
-  /* ================================================================
-     SETTINGS
-  ================================================================ */
-
-  function renderSettings() {
-    const user =
-      currentUser();
-
-    $('#admin-settings-page').innerHTML = `
-      <div class="page-head">
-
-        <div>
-          <span class="eyebrow">
-            SYSTEM
-          </span>
-
-          <h3>Settings</h3>
-
-          <p>
-            Frontend prototype settings and account management.
-          </p>
-        </div>
-
-      </div>
-
-      <div class="grid-2">
-
-        <div class="panel">
-
-          <h3>
-            Theme
-          </h3>
-
-          <p
-            class="muted"
-            style="font-size:12px">
-
-            Current theme:
-            <strong>
-              ${db.theme}
-            </strong>
-
-          </p>
-
-          <button
-            class="secondary-btn"
-            data-action="toggle-theme">
-            Switch Theme
-          </button>
-
-        </div>
-
-        <div class="panel">
-
-          <h3>
-            Prototype Data
-          </h3>
-
-          <p
-            class="muted"
-            style="font-size:12px">
-
-            Users, exams, attempts and
-            violation logs are stored in
-            this browser's localStorage.
-
-          </p>
-
-          <button
-            class="danger-btn"
-            data-action="reset-demo">
-            Reset Demo Data
-          </button>
-
-        </div>
-
-      </div>
-
-      <div
-        class="panel"
-        style="margin-top:18px">
-
-        <h3>
-          Accounts
-        </h3>
-
-        <div class="table-wrap">
-
-          <table class="data-table">
-
-            <thead>
-
-              <tr>
-                <th>Username</th>
-                <th>Name</th>
-                <th>Role</th>
-                <th>Action</th>
-              </tr>
-
-            </thead>
-
-            <tbody>
-
-              ${db.users
-                .map(
-                  account => `
-                  <tr>
-
-                    <td>
-                      ${esc(
-                        account.username
-                      )}
-                    </td>
-
-                    <td>
-                      ${esc(
-                        account.name
-                      )}
-                    </td>
-
-                    <td>
-                      ${esc(
-                        account.role
-                      )}
-                    </td>
-
-                    <td>
-
-                      ${
-                        account.id ===
-                        user?.id
-                          ? `
-                            <span class="muted">
-                              Current user
-                            </span>
-                          `
-                          : `
-                            <button
-                              class="danger-btn"
-                              data-action="delete-user"
-                              data-id="${account.id}">
-                              Delete
-                            </button>
-                          `
-                      }
-
-                    </td>
-
-                  </tr>
-                `
-                )
-                .join('')}
-
-            </tbody>
-
-          </table>
-
-        </div>
-
-      </div>
-
-      <div
-        class="panel"
-        style="margin-top:18px">
-
-        <h3>
-          Production Note
-        </h3>
-
-        <div class="notice danger-notice">
-
-          Do not use client-side passwords
-          and localStorage as a production
-          authentication system.
-
-          Move credentials, role permissions,
-          exam availability, attempt locking,
-          timers and violation logs to a
-          server-side database/API.
-
-        </div>
-
-      </div>
-    `;
-
-    bindActions();
-  }
-
-  /* ================================================================
-     EXAMINER DASHBOARD
-  ================================================================ */
-
-  function getAssignedExams(username) {
-    const normalized =
-      String(username || '')
-        .trim()
-        .toLowerCase();
-
-    return db.exams.filter(
-      exam =>
-        String(
-          exam.examinerUsername || ''
-        )
-          .trim()
-          .toLowerCase() ===
-        normalized
-    );
-  }
-
-  function getUserAttempts(username) {
-    return db.attempts.filter(
-      attempt =>
-        String(
-          attempt.username || ''
-        )
-          .trim()
-          .toLowerCase() ===
-        String(username || '')
-          .trim()
-          .toLowerCase()
-    );
-  }
-
-  function getCompletedAttempts(username) {
-    return getUserAttempts(
-      username
-    ).filter(
-      attempt =>
-        [
-          'Completed',
-          'Time Expired',
-          'Terminated'
-        ].includes(
-          attempt.status
-        )
-    );
-  }
-
-  function getTotalViolations(username) {
-    return getUserAttempts(
-      username
-    ).reduce(
-      (total, attempt) =>
-        total +
-        Number(
-          attempt.violations || 0
-        ),
-      0
-    );
-  }
-
-  function getTotalTimeSpent(username) {
-    return getCompletedAttempts(
-      username
-    ).reduce(
-      (total, attempt) =>
-        total +
-        Number(
-          attempt.durationSeconds || 0
-        ),
-      0
-    );
-  }
-
-  function getAttemptForExam(
-    examId,
-    username
-  ) {
-    return getUserAttempts(
-      username
-    )
-      .filter(
-        attempt =>
-          attempt.examId ===
-          examId
-      )
-      .sort(
-        (a, b) =>
-          (b.startedAt || 0) -
-          (a.startedAt || 0)
-      )[0];
-  }
-
-  function renderExaminerDashboard() {
-    const user =
-      currentUser();
-
-    if (!user) return;
-
-    const assigned =
-      getAssignedExams(
-        user.username
-      );
-
-    const completed =
-      getCompletedAttempts(
-        user.username
-      );
-
-    const completedExamIds =
-      new Set(
-        completed.map(
-          attempt =>
-            attempt.examId
-        )
-      );
-
-    const takenCount =
-      completedExamIds.size;
-
-    const progress =
-      assigned.length
-        ? Math.round(
-            (takenCount /
-              assigned.length) *
-              100
-          )
-        : 0;
-
-    const violations =
-      getTotalViolations(
-        user.username
-      );
-
-    const totalTime =
-      getTotalTimeSpent(
-        user.username
-      );
-
-    const available =
-      assigned.filter(
-        exam =>
-          getAvailability(
-            exam
-          ).status ===
-          'Available'
-      ).length;
-
-    $('#examiner-dashboard-page').innerHTML = `
-
-      <div class="page-head">
-
-        <div>
-
-          <span class="eyebrow">
-            YOUR EXAMINATION QUEUE
-          </span>
-
-          <h3>
-            Welcome,
-            ${esc(
-              user.name ||
-              user.username
-            )}
-          </h3>
-
-          <p>
-            View your assigned examinations,
-            availability, progress and
-            proctoring activity.
-          </p>
-
-        </div>
-
-      </div>
-
-      <!-- EXAMINER STATISTICS -->
-
-      <div
-        class="examiner-stats">
-
-        <div class="panel metric-panel">
-
-          <span class="metric-label">
-            EXAM PROGRESS
-          </span>
-
-          <strong>
-            ${takenCount}/${assigned.length}
-          </strong>
-
-          <div class="progress-bar">
-
-            <div
-              class="progress-fill"
-              style="
-                width:${progress}%
-              ">
-            </div>
-
-          </div>
-
-          <span class="metric-sub">
-            ${progress}% of assigned exams completed
-          </span>
-
-        </div>
-
-        <div class="panel metric-panel">
-
-          <span class="metric-label">
-            VIOLATIONS
-          </span>
-
-          <strong>
-            ${violations}
-          </strong>
-
-          <div class="progress-bar">
-
-            <div
-              class="progress-fill danger-fill"
-              style="
-                width:${Math.min(
-                  100,
-                  violations * 10
-                )}%
-              ">
-            </div>
-
-          </div>
-
-          <span class="metric-sub">
-            Total detected security violations
-          </span>
-
-        </div>
-
-        <div class="panel metric-panel">
-
-          <span class="metric-label">
-            TOTAL TIME SPENT
-          </span>
-
-          <strong>
-            ${formatDuration(
-              totalTime
-            )}
-          </strong>
-
-          <span class="metric-sub">
-            Across completed examination sessions
-          </span>
-
-        </div>
-
-      </div>
-
-      <!-- EXAM SUMMARY -->
-
-      <div
-        class="panel"
-        style="margin-bottom:18px">
-
-        <div class="progress-meta">
-
-          <strong>
-            Examination Progress
-          </strong>
-
-          <span>
-            ${takenCount}
-            of
-            ${assigned.length}
-            taken
-          </span>
-
-        </div>
-
-        <div
-          class="progress-bar"
-          style="margin-top:8px">
-
-          <div
-            class="progress-fill"
-            style="
-              width:${progress}%
-            ">
-          </div>
-
-        </div>
-
-        <div
-          class="progress-meta">
-
-          <span>
-            ${available}
-            currently available
-          </span>
-
-          <span>
-            ${assigned.length}
-            assigned
-          </span>
-
-        </div>
-
-      </div>
-
-      <!-- ASSIGNED EXAMS -->
-
-      <div
-        class="exam-grid">
-
-        ${
-          assigned.length
-            ? assigned
-                .map(
-                  exam =>
-                    examinerExamCard(
-                      exam,
-                      completedExamIds.has(
-                        exam.id
-                      )
-                    )
-                )
-                .join('')
-            : `
-              <div
-                class="panel"
-                style="grid-column:1/-1">
-
-                <div class="empty">
-                  No exams have been assigned
-                  to this examiner account.
-                </div>
-
-              </div>
-            `
-        }
-
-      </div>
-
-    `;
-
-    bindActions();
-  }
-
-  function examinerExamCard(
-    exam,
-    completed
-  ) {
-    const availability =
-      getAvailability(
-        exam
-      );
-
-    const canStart =
-      availability.status ===
-        'Available' &&
-      !completed;
-
-    const user =
-      currentUser();
-
-    const last =
-      getAttemptForExam(
-        exam.id,
-        user?.username
-      );
-
-    const timerEnabled =
-      boolSetting(
-        exam.timerEnabled
-      );
-
-    const antiCheat =
-      boolSetting(
-        exam.antiCheat
-      );
-
-    const startDate =
-      exam.startAt
-        ? fmtDate(exam.startAt)
-        : 'Immediately available';
-
-    const endDate =
-      exam.endAt
-        ? fmtDate(exam.endAt)
-        : 'No end date';
-
-    const statusText =
-      completed
-        ? 'COMPLETED'
-        : availability.status;
-
-    const statusClass =
-      completed
-        ? 'green'
-        : availability.status ===
-          'Available'
-        ? 'green'
-        : 'gray';
-
-    return `
-      <article class="exam-card">
-
-        <div class="exam-card-top">
-
-          <span class="badge ${statusClass}">
-            ${statusText}
-          </span>
-
-          ${
-            antiCheat
-              ? `
-                <span class="badge blue">
-                  PROCTORED
-                </span>
-              `
-              : ''
-          }
-
-        </div>
-
-        <h3>
-          ${esc(exam.title)}
-        </h3>
-
-        <p>
-          ${esc(
-            exam.description ||
-              'No description provided.'
-          )}
-        </p>
-
-        <!-- EXAM DATES -->
-
-        <div
-          class="exam-date-range">
-
-          <span>
-            START DATE
-          </span>
-
-          <strong>
-            ${esc(startDate)}
-          </strong>
-
-        </div>
-
-        <div
-          class="exam-date-range">
-
-          <span>
-            END DATE
-          </span>
-
-          <strong>
-            ${esc(endDate)}
-          </strong>
-
-        </div>
-
-        <!-- EXAM DETAILS -->
-
-        <div class="exam-meta">
-
-          <div class="meta-box">
-
-            <span>
-              Duration
-            </span>
-
-            <strong>
-              ${
-                timerEnabled
-                  ? `${exam.durationMinutes} min`
-                  : 'No timer'
-              }
-            </strong>
-
-          </div>
-
-          <div class="meta-box">
-
-            <span>
-              Anti-cheat
-            </span>
-
-            <strong>
-              ${
-                antiCheat
-                  ? 'Enabled'
-                  : 'Disabled'
-              }
-            </strong>
-
-          </div>
-
-          <div class="meta-box">
-
-            <span>
-              Max Violations
-            </span>
-
-            <strong>
-              ${exam.maxViolations}
-            </strong>
-
-          </div>
-
-          <div class="meta-box">
-
-            <span>
-              Attempts
-            </span>
-
-            <strong>
-              ${
-                completed
-                  ? '1 / 1'
-                  : '0 / 1'
-              }
-            </strong>
-
-          </div>
-
-        </div>
-
-        <!-- PREVIOUS SESSION DATA -->
-
-        ${
-          completed && last
-            ? `
-              <div
-                class="exam-date-range">
-
-                <span>
-                  SESSION SUMMARY
-                </span>
-
-                <strong>
-                  Violations:
-                  ${last.violations || 0}
-                  <br>
-
-                  Time Spent:
-                  ${formatDuration(
-                    last.durationSeconds ||
-                      0
-                  )}
-
-                  ${
-                    last.endedAt
-                      ? `
-                        <br>
-                        Completed:
-                        ${fmtDate(
-                          last.endedAt
-                        )}
-                      `
-                      : ''
-                  }
-
-                </strong>
-
-              </div>
-            `
-            : ''
-        }
-
-        <!-- ACTION -->
-
-        <div
-          class="exam-card-actions">
-
-          ${
-            completed
-              ? `
-                <button
-                  class="secondary-btn"
-                  disabled>
-                  Exam Locked
-                </button>
-              `
-              : canStart
-              ? `
-                <button
-                  class="primary-btn"
-                  data-action="start-exam"
-                  data-id="${exam.id}">
-                  Start Exam
-                </button>
-              `
-              : `
-                <button
-                  class="secondary-btn"
-                  disabled>
-                  Not Available
-                </button>
-              `
-          }
-
-        </div>
-
-        ${
-          last &&
-          last.status ===
-            'In Progress'
-            ? `
-              <div class="helper">
-                An active session is already
-                associated with this exam.
-                Refreshing the page will not
-                create a second attempt.
-              </div>
-            `
-            : ''
-        }
-
-      </article>
-    `;
-  }
-
-  /* ================================================================
-     START EXAM
-  ================================================================ */
-
-  function startExam(id) {
-    const exam =
-      db.exams.find(
-        item => item.id === id
-      );
-
-    const user =
-      currentUser();
-
-    if (!exam || !user) {
-      return;
+     `
     }
 
-    const assignedUsername =
-      String(
-        exam.examinerUsername || ''
-      )
-        .trim()
-        .toLowerCase();
-
-    if (
-      assignedUsername !==
-      String(
-        user.username || ''
-      )
-        .trim()
-        .toLowerCase()
-    ) {
-      toast(
-        'This exam is not assigned to your account.',
-        'error'
-      );
-
-      return;
-    }
-
-    if (
-      getAvailability(
-        exam
-      ).status !== 'Available'
-    ) {
-      toast(
-        'This exam is not currently available.',
-        'error'
-      );
-
-      return;
-    }
-
-    const alreadyCompleted =
-      db.attempts.some(
-        attempt =>
-          attempt.examId === id &&
-          attempt.username ===
-            user.username &&
-          [
-            'Completed',
-            'Time Expired',
-            'Terminated'
-          ].includes(
-            attempt.status
-          )
-      );
-
-    if (alreadyCompleted) {
-      toast(
-        'This exam is locked because it has already been taken.',
-        'error'
-      );
-
-      return;
-    }
-
-    const inProgress =
-      db.attempts.find(
-        attempt =>
-          attempt.examId === id &&
-          attempt.username ===
-            user.username &&
-          attempt.status ===
-            'In Progress'
-      );
-
-    /*
-      If a session already exists, offer to resume it.
-    */
-    if (inProgress) {
-      const resume =
-        confirm(
-          'An active examination session already exists.\n\n' +
-          'Click OK to resume the existing session.'
-        );
-
-      if (resume) {
-        resumeExam(
-          exam,
-          inProgress
-        );
-      }
-
-      return;
-    }
-
-    openStartInstructions(
-      exam
-    );
-  }
-
-  function openStartInstructions(
-    exam
-  ) {
-    const timerEnabled =
-      boolSetting(
-        exam.timerEnabled
-      );
-
-    const antiCheat =
-      boolSetting(
-        exam.antiCheat
-      );
-
-    $('#modal-root').hidden = false;
-
-    $('#modal-root').innerHTML = `
-      <div class="modal">
-
-        <div class="modal-head">
-
-          <div>
-
-            <span class="eyebrow">
-              EXAM INSTRUCTIONS
-            </span>
-
-            <h3>
-              ${esc(exam.title)}
-            </h3>
-
-          </div>
-
-          <button
-            class="close-btn"
-            data-action="close-modal">
-            ×
-          </button>
-
-        </div>
-
-        <div class="modal-body">
-
-          <div class="notice">
-
-            You can take this examination
-            only once.
-
-            Once submitted, expired or
-            terminated, it cannot be retaken.
-
-          </div>
-
-          <ul
-            style="
-              color:var(--muted);
-              font-size:13px;
-              line-height:1.8;
-              padding-left:20px
-            ">
-
-            <li>
-              ${
-                timerEnabled
-                  ? `
-                    You have
-                    <strong>
-                      ${exam.durationMinutes}
-                      minutes
-                    </strong>
-                    to complete the examination.
-                  `
-                  : `
-                    No countdown timer is
-                    configured for this exam.
-                  `
-              }
-            </li>
-
-            <li>
-              ${
-                antiCheat
-                  ? `
-                    Anti-cheat is enabled.
-                    Up to
-                    <strong>
-                      ${exam.maxViolations}
-                    </strong>
-                    violation(s) are allowed
-                    before automatic termination.
-                  `
-                  : `
-                    Anti-cheat monitoring is
-                    disabled for this examination.
-                  `
-              }
-            </li>
-
-            <li>
-              The examination will attempt
-              to enter fullscreen mode.
-            </li>
-
-            <li>
-              Do not switch tabs, minimize
-              the browser or leave the
-              examination window.
-            </li>
-
-            <li>
-              Submit the Google Form first,
-              then click the portal's
-              <strong>
-                Submit Exam
-              </strong>
-              button.
-            </li>
-
-            <li>
-              Do not refresh or close the
-              page while the exam is active.
-            </li>
-
-          </ul>
-
-          ${
-            antiCheat
-              ? `
-                <div
-                  class="notice danger-notice">
-
-                  Fullscreen, tab visibility,
-                  window focus and restricted
-                  shortcuts may be monitored.
-
-                  Browser limitations mean
-                  this is a detection and
-                  deterrence layer, not a
-                  guarantee against cheating.
-
-                </div>
-              `
-              : ''
-          }
-
-        </div>
-
-        <div class="modal-footer">
-
-          <button
-            class="secondary-btn"
-            data-action="close-modal">
-            Cancel
-          </button>
-
-          <button
-            class="primary-btn"
-            data-action="confirm-start"
-            data-id="${exam.id}">
-            Start Examination
-          </button>
-
-        </div>
-
-      </div>
-    `;
-
-    bindActions();
-  }
-
-  /* ================================================================
-     CREATE EXAM SESSION
-  ================================================================ */
-
-  function confirmStart(id) {
-    closeModal();
-
-    const exam =
-      db.exams.find(
-        item => item.id === id
-      );
-
-    const user =
-      currentUser();
-
-    if (!exam || !user) return;
-
-    const timerEnabled =
-      boolSetting(
-        exam.timerEnabled,
-        false
-      );
-
-    const durationMinutes =
-      Math.max(
-        1,
-        Math.round(
-          Number(
-            exam.durationMinutes
-          ) || 60
-        )
-      );
-
-    const antiCheat =
-      boolSetting(
-        exam.antiCheat,
-        false
-      );
-
-    const maxViolations =
-      Math.max(
-        1,
-        Math.round(
-          Number(
-            exam.maxViolations
-          ) || 3
-        )
-      );
-
-    /*
-      Normalize exam settings.
-    */
-    exam.timerEnabled =
-      timerEnabled;
-
-    exam.durationMinutes =
-      durationMinutes;
-
-    exam.antiCheat =
-      antiCheat;
-
-    exam.maxViolations =
-      maxViolations;
-
-    saveDB();
-
-    const now =
-      Date.now();
-
-    const attempt = {
-      id: uid('attempt'),
-
-      examId:
-        exam.id,
-
-      examTitle:
-        exam.title,
-
-      username:
-        user.username,
-
-      userId:
-        user.id,
-
-      startedAt:
-        now,
-
-      endedAt:
-        null,
-
-      status:
-        'In Progress',
-
-      violations:
-        0,
-
-      durationSeconds:
-        0
-    };
-
-    db.attempts.push(
-      attempt
-    );
-
-    saveDB();
-
-    currentExam =
-      clone(exam);
-
-    examState = {
-      attemptId:
-        attempt.id,
-
-      seconds:
-        timerEnabled
-          ? durationMinutes * 60
-          : 0,
-
-      timerEnabled,
-
-      antiCheat,
-
-      maxViolations,
-
-      startedAt:
-        now,
-
-      active:
-        true
-    };
-
-    prepareExamInterface();
-
-    showView('exam');
-
-    document.body.classList.add(
-      'lockdown-active'
-    );
-
-    $('#exam-view')?.classList.add(
-      'lockdown-active'
-    );
-
-    graceUntil =
-      Date.now() + GRACE;
-
-    /*
-      Always request fullscreen during an
-      examination session.
-
-      Browsers only allow this after a
-      user interaction, which is why this
-      happens immediately after clicking
-      Start Examination.
-    */
-    requestFullscreen().finally(() => {
-      graceUntil =
-        Date.now() + GRACE;
-    });
-
-    renderTimer();
-
-    if (timerEnabled) {
-      startTimer();
-    }
-  }
-
-  function resumeExam(
-    exam,
-    attempt
-  ) {
-    closeModal();
-
-    const timerEnabled =
-      boolSetting(
-        exam.timerEnabled,
-        false
-      );
-
-    const durationMinutes =
-      Math.max(
-        1,
-        Math.round(
-          Number(
-            exam.durationMinutes
-          ) || 60
-        )
-      );
-
-    const antiCheat =
-      boolSetting(
-        exam.antiCheat,
-        false
-      );
-
-    const maxViolations =
-      Math.max(
-        1,
-        Math.round(
-          Number(
-            exam.maxViolations
-          ) || 3
-        )
-      );
-
-    const elapsedSeconds =
-      Math.floor(
-        (
-          Date.now() -
-          Number(
-            attempt.startedAt
-          )
-        ) / 1000
-      );
-
-    const remainingSeconds =
-      Math.max(
-        0,
-        durationMinutes * 60 -
-          elapsedSeconds
-      );
-
-    currentExam =
-      clone(exam);
-
-    examState = {
-      attemptId:
-        attempt.id,
-
-      seconds:
-        timerEnabled
-          ? remainingSeconds
-          : 0,
-
-      timerEnabled,
-
-      antiCheat,
-
-      maxViolations,
-
-      startedAt:
-        Number(
-          attempt.startedAt
-        ),
-
-      active:
-        true
-    };
-
-    /*
-      If the timer expired while the
-      browser was closed, terminate it.
-    */
-    if (
-      timerEnabled &&
-      remainingSeconds <= 0
-    ) {
-      finishExam(
-        'Time Expired',
-        'Time Expired',
-        'Your allotted examination time has ended.',
-        '⌛'
-      );
-
-      return;
-    }
-
-    prepareExamInterface();
-
-    showView('exam');
-
-    document.body.classList.add(
-      'lockdown-active'
-    );
-
-    $('#exam-view')?.classList.add(
-      'lockdown-active'
-    );
-
-    graceUntil =
-      Date.now() + GRACE;
-
-    requestFullscreen().finally(() => {
-      graceUntil =
-        Date.now() + GRACE;
-    });
-
-    renderTimer();
-
-    if (timerEnabled) {
-      startTimer();
-    }
-  }
-
-  function prepareExamInterface() {
-    const attempt =
-      db.attempts.find(
-        item =>
-          item.id ===
-          examState.attemptId
-      );
-
-    $('#live-exam-title').textContent =
-      currentExam?.title ||
-      'Examination';
-
-    $('#live-exam-examiner').textContent =
-      'Assigned to ' +
-      (
-        currentUser()?.username ||
-        'Examiner'
-      );
-
-    $('#exam-violations').textContent =
-      `${attempt?.violations || 0} / ${examState.maxViolations}`;
-
-    $('#exam-iframe').src =
-      currentExam?.formUrl ||
-      DEFAULT_FORM;
-
-    $('#exam-instructions').textContent =
-      examState.timerEnabled
-        ? `Timer: ${currentExam.durationMinutes} minutes • Anti-cheat: ${
-            examState.antiCheat
-              ? 'Enabled'
-              : 'Disabled'
-          } • Submit the Google Form, then click Submit Exam.`
-        : `No timer • Anti-cheat: ${
-            examState.antiCheat
-              ? 'Enabled'
-              : 'Disabled'
-          } • Submit the Google Form, then click Submit Exam.`;
-
-    if ($('#exam-submit-btn')) {
-      $('#exam-submit-btn').disabled =
-        false;
-    }
-
-    $('#violation-overlay').hidden =
-      true;
-
-    violationOverlayOpen =
-      false;
-
-    if ($('#exam-iframe')) {
-      $('#exam-iframe').style.filter =
-        '';
-    }
-  }
-
-  /* ================================================================
-     FULLSCREEN
-  ================================================================ */
-
-  function requestFullscreen() {
-    const element =
-      document.documentElement;
-
-    const fn =
-      element.requestFullscreen ||
-      element.webkitRequestFullscreen ||
-      element.mozRequestFullScreen;
-
-    if (!fn) {
-      return Promise.resolve();
-    }
-
-    try {
-      return Promise.resolve(
-        fn.call(element)
-      ).catch(() => {});
-    } catch (error) {
-      return Promise.resolve();
-    }
-  }
-
-  function exitFullscreen() {
-    const fn =
-      document.exitFullscreen ||
-      document.webkitExitFullscreen ||
-      document.mozCancelFullScreen;
-
-    if (
-      fn &&
-      isFullscreen()
-    ) {
-      try {
-        Promise.resolve(
-          fn.call(document)
-        ).catch(() => {});
-      } catch (error) {}
-    }
-  }
-
-  function isFullscreen() {
-    return Boolean(
-      document.fullscreenElement ||
-      document.webkitFullscreenElement ||
-      document.mozFullScreenElement
-    );
-  }
-
-  /* ================================================================
-     TIMER
-  ================================================================ */
-
-  function startTimer() {
-    clearInterval(timer);
-
-    renderTimer();
-
-    timer = setInterval(() => {
-      if (
-        !examState?.active
-      ) {
-        clearInterval(timer);
-        return;
-      }
-
-      examState.seconds--;
-
-      renderTimer();
-
-      if (
-        examState.seconds <= 0
-      ) {
-        clearInterval(timer);
-
-        finishExam(
-          'Time Expired',
-          'Time Expired',
-          'Your allotted examination time has ended.',
-          '⌛'
-        );
-      }
-    }, 1000);
-  }
-
-  function renderTimer() {
-    const seconds =
-      Math.max(
-        0,
-        Number(
-          examState?.seconds
-        ) || 0
-      );
-
-    const minutes =
-      Math.floor(
-        seconds / 60
-      )
-        .toString()
-        .padStart(2, '0');
-
-    const remaining =
-      (
-        seconds % 60
-      )
-        .toString()
-        .padStart(2, '0');
-
-    const timerElement =
-      $('#exam-timer');
-
-    if (timerElement) {
-      timerElement.textContent =
-        examState?.timerEnabled
-          ? `${minutes}:${remaining}`
-          : 'No Timer';
-
-      timerElement.classList.toggle(
-        'warning',
-        seconds <= 300 &&
-          seconds > 60
-      );
-
-      timerElement.classList.toggle(
-        'danger',
-        seconds <= 60 &&
-          Boolean(
-            examState?.timerEnabled
-          )
-      );
-    }
-
-    const duration =
-      Math.max(
-        1,
-        Math.round(
-          Number(
-            currentExam?.durationMinutes
-          ) || 60
-        )
-      );
-
-    const percentage =
-      examState?.timerEnabled
-        ? Math.max(
-            0,
-            Math.min(
-              100,
-              (
-                seconds /
-                (duration * 60)
-              ) *
-                100
-            )
-          )
-        : 0;
-
-    const progress =
-      $('#exam-progress');
-
-    if (progress) {
-      progress.style.width =
-        100 - percentage + '%';
-    }
-  }
-
-  /* ================================================================
-     PROCTORING / ANTI-CHEAT
-  ================================================================ */
-
-  function registerViolation(
-    reason
-  ) {
-    if (
-      !examState?.active ||
-      !examState.antiCheat
-    ) {
-      return;
-    }
-
-    const now =
-      Date.now();
-
-    if (
-      now < graceUntil ||
-      now - lastViolation <
-        DEBOUNCE ||
-      violationOverlayOpen
-    ) {
-      return;
-    }
-
-    lastViolation =
-      now;
-
-    const attempt =
-      db.attempts.find(
-        item =>
-          item.id ===
-          examState.attemptId
-      );
-
-    if (!attempt) return;
-
-    const number =
-      (
-        attempt.violations ||
-        0
-      ) + 1;
-
-    attempt.violations =
-      number;
-
-    db.violations.push({
-      id: uid('vio'),
-
-      attemptId:
-        attempt.id,
-
-      examId:
-        currentExam.id,
-
-      examTitle:
-        currentExam.title,
-
-      username:
-        attempt.username,
-
-      number,
-
-      reason,
-
-      timestamp:
-        now
-    });
-
-    saveDB();
-
-    $('#exam-violations').textContent =
-      `${number} / ${examState.maxViolations}`;
-
-    /*
-      Maximum violations reached:
-      immediately terminate the exam.
-    */
-    if (
-      number >=
-      examState.maxViolations
-    ) {
-      finishExam(
-        'Terminated',
-        'Exam Terminated',
-        'You have been disqualified for exceeding the maximum allowed violations.',
-        '×',
-        true
-      );
-
-      return;
-    }
-
-    showViolationOverlay(
-      reason
-    );
-  }
-
-  function showViolationOverlay(
-    reason
-  ) {
-    if (
-      !examState?.active ||
-      !examState.antiCheat
-    ) {
-      return;
-    }
-
-    violationOverlayOpen =
-      true;
-
-    $('#violation-reason').textContent =
-      reason;
-
-    const attempt =
-      db.attempts.find(
-        item =>
-          item.id ===
-          examState.attemptId
-      );
-
-    $('#overlay-count').textContent =
-      attempt?.violations ||
-      0;
-
-    $('#overlay-max').textContent =
-      examState.maxViolations;
-
-    $('#violation-overlay').hidden =
-      false;
-
-    if ($('#exam-iframe')) {
-      $('#exam-iframe').style.filter =
-        'blur(6px) brightness(.45)';
-    }
-  }
-
-  /* ================================================================
-     RESUME AFTER VIOLATION
-  ================================================================ */
-
-  $('#resume-exam-btn')?.addEventListener(
-    'click',
-    async () => {
-      if (
-        !examState?.active
-      ) {
-        return;
-      }
-
-      $('#violation-overlay').hidden =
-        true;
-
-      violationOverlayOpen =
-        false;
-
-      if ($('#exam-iframe')) {
-        $('#exam-iframe').style.filter =
-          '';
-      }
-
-      graceUntil =
-        Date.now() + GRACE;
-
-      await requestFullscreen();
-
-      graceUntil =
-        Date.now() + GRACE;
-    }
+    <div class="instruction-item">
+     <strong>Submission</strong>
+     <span>
+      Complete and submit the Google Form,
+      then click Submit Exam in Proctor+.
+     </span>
+    </div>
+   </div>
+
+   ${
+    resume
+    ?`
+     <div class="exam-notice">
+      An unfinished examination session was
+      found. You will resume that session.
+     </div>
+    `
+    :''
+   }
+
+   <div class="modal-actions">
+    <button class="secondary-btn"
+     data-action="close-modal">
+     Cancel
+    </button>
+
+    <button class="primary-btn"
+     data-action="confirm-start"
+     data-id="${esc(e.id)}">
+     ${resume?'Resume Examination':'Start Examination'}
+    </button>
+   </div>
+  </div>
+ `;
+
+ document.body.appendChild(modal);
+
+ bindActions();
+}
+
+function closeModal(){
+ const modal=document.getElementById('start-modal');
+
+ if(modal){
+  modal.remove();
+ }
+}
+
+function confirmStart(id){
+ db=loadDB();
+
+ const u=currentUser();
+
+ if(!u){
+  logout();
+  return;
+ }
+
+ const e=db.exams.find(x=>x.id===id);
+
+ if(!e){
+  toast('Examination not found.','error');
+  return;
+ }
+
+ const assigned=getAssignedExamsForUser(u)
+  .some(x=>x.id===e.id);
+
+ if(!assigned){
+  toast(
+   'This examination is not assigned to your account.',
+   'error'
   );
+  return;
+ }
 
-  /* ================================================================
-     FULLSCREEN MONITOR
-  ================================================================ */
+ if(!isExamAvailable(e)){
+  toast(
+   'This examination is currently unavailable.',
+   'error'
+  );
+  return;
+ }
 
-  [
-    'fullscreenchange',
-    'webkitfullscreenchange',
-    'mozfullscreenchange'
-  ].forEach(eventName => {
-    document.addEventListener(
-      eventName,
-      () => {
-        if (
-          examState?.active &&
-          examState.antiCheat &&
-          !isFullscreen() &&
-          Date.now() >
-            graceUntil
-        ) {
-          registerViolation(
-            'You exited full-screen mode.'
-          );
-        }
-      }
-    );
+ const completed=getCompletedAttempt(e.id,u);
+
+ if(completed){
+  toast(
+   'This examination has already been completed.',
+   'error'
+  );
+  return;
+ }
+
+ closeModal();
+
+ let attempt=getActiveAttempt(e.id,u);
+ let resume=!!attempt;
+
+ if(!attempt){
+  attempt={
+   id:uid('attempt'),
+   examId:e.id,
+   examTitle:e.title,
+   userId:u.id,
+   username:u.username,
+   status:'In Progress',
+   startedAt:Date.now(),
+   endedAt:null,
+   durationSeconds:0,
+   violations:0
+  };
+
+  db.attempts.push(attempt);
+  saveDB();
+ }
+
+ currentExam=e;
+
+ const elapsed=Math.max(
+  0,
+  Math.floor(
+   (Date.now()-Number(attempt.startedAt||Date.now()))/1000
+  )
+ );
+
+ const totalSeconds=e.timerEnabled
+  ?Math.max(
+   60,
+   Math.round(
+    Number(e.durationMinutes)||60
+   )*60
+  )
+  :0;
+
+ const remaining=e.timerEnabled
+  ?Math.max(0,totalSeconds-elapsed)
+  :0;
+
+ examState={
+  attemptId:attempt.id,
+  active:true,
+  antiCheat:e.antiCheat===true,
+  maxViolations:Math.max(
+   1,
+   Number(e.maxViolations)||3
+  ),
+  timerEnabled:e.timerEnabled===true,
+  seconds:remaining,
+  startedAt:attempt.startedAt
+ };
+
+ lastViolation=0;
+ graceUntil=Date.now()+GRACE;
+
+ const title=$('#live-exam-title');
+
+ if(title){
+  title.textContent=e.title;
+ }
+
+ const examiner=$('#live-exam-examiner');
+
+ if(examiner){
+  examiner.textContent=u.username;
+ }
+
+ const violation=$('#exam-violations');
+
+ if(violation){
+  violation.textContent=
+   `${attempt.violations||0} / ${examState.maxViolations}`;
+ }
+
+ const instructions=$('#exam-instructions');
+
+ if(instructions){
+  instructions.innerHTML=
+   e.antiCheat
+   ?`
+    <strong>Proctored Examination</strong>
+    <span>
+     Keep this examination in full screen.
+     Tab switching, focus loss and restricted
+     actions may be recorded.
+    </span>
+   `
+   :`
+    <strong>Examination</strong>
+    <span>
+     Complete the Google Form and use
+     Submit Exam when finished.
+    </span>
+   `;
+ }
+
+ const iframe=$('#exam-iframe');
+
+ if(iframe){
+  loadGoogleForm(e.formUrl);
+ }
+
+ showView('exam');
+
+ document.body.classList.add('lockdown-active');
+
+ $('#exam-view')?.classList.add(
+  'lockdown-active'
+ );
+
+ graceUntil=Date.now()+GRACE;
+
+ if(e.antiCheat){
+  requestFullscreen().finally(()=>{
+   graceUntil=Date.now()+GRACE;
   });
+ }
 
-  /* ================================================================
-     TAB / WINDOW MONITOR
-  ================================================================ */
+ renderTimer();
 
-  document.addEventListener(
-    'visibilitychange',
-    () => {
-      if (
-        examState?.active &&
-        examState.antiCheat &&
-        document.hidden
-      ) {
-        registerViolation(
-          'You switched tabs or minimized the window.'
-        );
-      }
-    }
+ if(e.timerEnabled){
+  startTimer();
+ }
+
+ if(e.timerEnabled&&remaining<=0){
+  finishExam(
+   'Time Expired',
+   'Time Expired',
+   'Your allotted examination time has ended.',
+   '⌛'
+  );
+ }
+}
+
+/* GOOGLE FORMS REFRESH */
+
+function loadGoogleForm(url){
+ const iframe=$('#exam-iframe');
+
+ if(!iframe||!url)return;
+
+ // Always clear the previous Google Form instance first.
+ iframe.src='about:blank';
+
+ iframe.removeAttribute('srcdoc');
+
+ const base=String(url).trim();
+
+ const separator=
+  base.includes('?')
+   ?'&'
+   :'?';
+
+ // Cache-busting parameter forces the browser to request
+ // a fresh iframe instance for every examination session.
+ const freshUrl=
+  `${base}${separator}`+
+  `proctor_refresh=${Date.now()}_`+
+  `${Math.random().toString(36).slice(2,8)}`;
+
+ window.setTimeout(()=>{
+  if($('#exam-iframe')===iframe){
+   iframe.src=freshUrl;
+  }
+ },100);
+}
+
+function reloadCurrentGoogleForm(){
+ if(!currentExam?.formUrl)return;
+
+ loadGoogleForm(currentExam.formUrl);
+}
+
+/* FULLSCREEN */
+
+function requestFullscreen(){
+ const el=document.documentElement;
+
+ const fn=
+  el.requestFullscreen||
+  el.webkitRequestFullscreen||
+  el.mozRequestFullScreen;
+
+ return fn
+  ?Promise.resolve(fn.call(el)).catch(()=>{})
+  :Promise.resolve();
+}
+
+function exitFullscreen(){
+ const fn=
+  document.exitFullscreen||
+  document.webkitExitFullscreen||
+  document.mozCancelFullScreen;
+
+ if(fn&&isFullscreen()){
+  Promise.resolve(
+   fn.call(document)
+  ).catch(()=>{});
+ }
+}
+
+function isFullscreen(){
+ return !!(
+  document.fullscreenElement||
+  document.webkitFullscreenElement||
+  document.mozFullScreenElement
+ );
+}
+
+/* TIMER */
+
+function startTimer(){
+ clearInterval(timer);
+
+ renderTimer();
+
+ timer=setInterval(()=>{
+  if(!examState?.active)return;
+
+  examState.seconds--;
+
+  renderTimer();
+
+  if(examState.seconds<=0){
+   clearInterval(timer);
+
+   finishExam(
+    'Time Expired',
+    'Time Expired',
+    'Your allotted examination time has ended.',
+    '⌛'
+   );
+  }
+ },1000);
+}
+
+function renderTimer(){
+ const t=Math.max(
+  0,
+  Number(examState?.seconds)||0
+ );
+
+ const m=Math.floor(t/60)
+  .toString()
+  .padStart(2,'0');
+
+ const sec=(t%60)
+  .toString()
+  .padStart(2,'0');
+
+ const timerEl=$('#exam-timer');
+
+ if(timerEl){
+  timerEl.textContent=
+   examState?.timerEnabled
+   ?`${m}:${sec}`
+   :'No Timer';
+
+  timerEl.classList.toggle(
+   'warning',
+   t<=300&&t>60
   );
 
-  window.addEventListener(
-    'blur',
-    () => {
-      if (
-        examState?.active &&
-        examState.antiCheat
-      ) {
-        registerViolation(
-          'The exam window lost focus.'
-        );
-      }
-    }
+  timerEl.classList.toggle(
+   'danger',
+   t<=60&&!!examState?.timerEnabled
+  );
+ }
+
+ const duration=Math.max(
+  1,
+  Math.round(
+   Number(currentExam?.durationMinutes)||60
+  )
+ );
+
+ const pct=examState?.timerEnabled
+  ?Math.max(
+   0,
+   Math.min(
+    100,
+    (t/(duration*60))*100
+   )
+  )
+  :0;
+
+ const progress=$('#exam-progress');
+
+ if(progress){
+  progress.style.width=(100-pct)+'%';
+ }
+}
+
+/* PROCTORING */
+
+function registerViolation(reason){
+ if(!examState?.active||
+    !examState.antiCheat){
+  return;
+ }
+
+ const now=Date.now();
+
+ if(
+  now<graceUntil||
+  now-lastViolation<DEBOUNCE||
+  violationOverlayOpen
+ ){
+  return;
+ }
+
+ lastViolation=now;
+
+ const a=db.attempts.find(
+  x=>x.id===examState.attemptId
+ );
+
+ if(!a)return;
+
+ const n=(a.violations||0)+1;
+
+ a.violations=n;
+
+ db.violations.push({
+  id:uid('vio'),
+  attemptId:a.id,
+  examId:currentExam.id,
+  examTitle:currentExam.title,
+  username:a.username,
+  number:n,
+  reason,
+  timestamp:now
+ });
+
+ saveDB();
+
+ const violationEl=$('#exam-violations');
+
+ if(violationEl){
+  violationEl.textContent=
+   `${n} / ${examState.maxViolations}`;
+ }
+
+ if(n>=examState.maxViolations){
+  finishExam(
+   'Terminated',
+   'Exam Terminated',
+   'You have been disqualified for exceeding the maximum allowed violations.',
+   '×',
+   true
   );
 
-  /* ================================================================
-     BLOCK COMMON COPY / CONTEXT ACTIONS
-  ================================================================ */
+  return;
+ }
 
-  document.addEventListener(
-    'contextmenu',
-    event => {
-      if (
-        examState?.active &&
-        examState.antiCheat
-      ) {
-        event.preventDefault();
-      }
-    }
+ showViolationOverlay(reason);
+}
+
+function showViolationOverlay(reason){
+ if(!examState?.active||
+    !examState.antiCheat){
+  return;
+ }
+
+ violationOverlayOpen=true;
+
+ const reasonEl=$('#violation-reason');
+
+ if(reasonEl){
+  reasonEl.textContent=reason;
+ }
+
+ const a=db.attempts.find(
+  x=>x.id===examState.attemptId
+ );
+
+ const countEl=$('#overlay-count');
+
+ if(countEl){
+  countEl.textContent=a?.violations||0;
+ }
+
+ const maxEl=$('#overlay-max');
+
+ if(maxEl){
+  maxEl.textContent=examState.maxViolations;
+ }
+
+ const overlay=$('#violation-overlay');
+
+ if(overlay){
+  overlay.hidden=false;
+ }
+
+ const iframe=$('#exam-iframe');
+
+ if(iframe){
+  iframe.style.filter=
+   'blur(6px) brightness(.45)';
+ }
+}
+
+$('#resume-exam-btn')?.addEventListener(
+ 'click',
+ async()=>{
+  if(!examState?.active)return;
+
+  const overlay=$('#violation-overlay');
+
+  if(overlay){
+   overlay.hidden=true;
+  }
+
+  violationOverlayOpen=false;
+
+  const iframe=$('#exam-iframe');
+
+  if(iframe){
+   iframe.style.filter='';
+  }
+
+  graceUntil=Date.now()+GRACE;
+
+  await requestFullscreen();
+
+  graceUntil=Date.now()+GRACE;
+ }
+);
+
+[
+ 'fullscreenchange',
+ 'webkitfullscreenchange',
+ 'mozfullscreenchange'
+].forEach(ev=>{
+ document.addEventListener(ev,()=>{
+  if(
+   examState?.active&&
+   examState.antiCheat&&
+   !isFullscreen()&&
+   Date.now()>graceUntil
+  ){
+   registerViolation(
+    'You exited full-screen mode.'
+   );
+  }
+ });
+});
+
+document.addEventListener(
+ 'visibilitychange',
+ ()=>{
+  if(
+   examState?.active&&
+   examState.antiCheat&&
+   document.hidden
+  ){
+   registerViolation(
+    'You switched tabs or minimized the window.'
+   );
+  }
+ }
+);
+
+window.addEventListener(
+ 'blur',
+ ()=>{
+  if(
+   examState?.active&&
+   examState.antiCheat
+  ){
+   registerViolation(
+    'The exam window lost focus.'
+   );
+  }
+ }
+);
+
+document.addEventListener(
+ 'contextmenu',
+ e=>{
+  if(examState?.active){
+   e.preventDefault();
+  }
+ }
+);
+
+document.addEventListener(
+ 'copy',
+ e=>{
+  if(examState?.active){
+   e.preventDefault();
+  }
+ }
+);
+
+document.addEventListener(
+ 'cut',
+ e=>{
+  if(examState?.active){
+   e.preventDefault();
+  }
+ }
+);
+
+document.addEventListener(
+ 'paste',
+ e=>{
+  if(examState?.active){
+   e.preventDefault();
+  }
+ }
+);
+
+document.addEventListener(
+ 'keydown',
+ e=>{
+  if(!examState?.active)return;
+
+  const k=(e.key||'').toLowerCase();
+
+  const mod=e.ctrlKey||e.metaKey;
+
+  const restricted=
+   k==='f12'||
+   (
+    mod&&
+    e.shiftKey&&
+    ['i','j','c'].includes(k)
+   )||
+   (
+    mod&&
+    ['t','n','w','u'].includes(k)
+   );
+
+  if(restricted){
+   e.preventDefault();
+
+   registerViolation(
+    `Restricted shortcut attempt: ${
+     [
+      e.ctrlKey?'Ctrl':'',
+      e.metaKey?'Cmd':'',
+      e.altKey?'Alt':'',
+      e.shiftKey?'Shift':'',
+      e.key
+     ].filter(Boolean).join('+')
+    }`
+   );
+  }
+});
+
+window.addEventListener(
+ 'beforeunload',
+ e=>{
+  if(examState?.active){
+   e.preventDefault();
+   e.returnValue='';
+  }
+ }
+);
+
+function syncViolationOverlay(){
+ const overlay=
+  document.getElementById(
+   'violation-overlay'
   );
 
-  document.addEventListener(
-    'copy',
-    event => {
-      if (
-        examState?.active &&
-        examState.antiCheat
-      ) {
-        event.preventDefault();
-      }
-    }
+ if(!overlay)return;
+
+ if(!examState?.active){
+  violationOverlayOpen=false;
+  overlay.hidden=true;
+ }
+}
+
+syncViolationOverlay();
+
+/* SUBMIT / RESULT */
+
+$('#exam-submit-btn')?.addEventListener(
+ 'click',
+ ()=>{
+  if(!examState?.active)return;
+
+  const ok=confirm(
+   'Confirm that you have submitted the Google Form. '+
+   'This will permanently end this exam attempt '+
+   'and cannot be undone.'
   );
 
-  document.addEventListener(
-    'cut',
-    event => {
-      if (
-        examState?.active &&
-        examState.antiCheat
-      ) {
-        event.preventDefault();
-      }
+  if(ok){
+   finishExam(
+    'Completed',
+    'Thank you for taking the exam!',
+    'Your examination session has been submitted successfully.',
+    '✓',
+    false
+   );
+  }
+ }
+);
+
+function finishExam(
+ status,
+ title,
+ message,
+ icon,
+ terminated=false
+){
+ if(!examState?.active)return;
+
+ examState.active=false;
+
+ clearInterval(timer);
+
+ timer=null;
+
+ const a=db.attempts.find(
+  x=>x.id===examState.attemptId
+ );
+
+ if(a){
+  a.status=status;
+  a.endedAt=Date.now();
+
+  a.durationSeconds=Math.max(
+   0,
+   Math.floor(
+    (
+     Number(a.endedAt)-
+     Number(a.startedAt||a.endedAt)
+    )/1000
+   )
+  );
+ }
+
+ saveDB();
+
+ const overlay=$('#violation-overlay');
+
+ if(overlay){
+  overlay.hidden=true;
+ }
+
+ violationOverlayOpen=false;
+
+ document.body.classList.remove(
+  'lockdown-active'
+ );
+
+ $('#exam-view')?.classList.remove(
+  'lockdown-active'
+ );
+
+ exitFullscreen();
+
+ const resultIcon=$('#result-icon');
+
+ if(resultIcon){
+  resultIcon.textContent=icon;
+
+  resultIcon.style.color=
+   terminated
+   ?'var(--danger)'
+   :'var(--success)';
+
+  resultIcon.style.background=
+   terminated
+   ?'rgba(239,91,103,.12)'
+   :'rgba(49,196,141,.12)';
+ }
+
+ const eyebrow=$('#result-eyebrow');
+
+ if(eyebrow){
+  eyebrow.textContent=
+   terminated
+   ?'EXAM TERMINATED'
+   :status==='Time Expired'
+    ?'TIME EXPIRED'
+    :'EXAM COMPLETE';
+ }
+
+ const resultTitle=$('#result-title');
+
+ if(resultTitle){
+  resultTitle.textContent=title;
+ }
+
+ const resultMessage=$('#result-message');
+
+ if(resultMessage){
+  resultMessage.textContent=message;
+ }
+
+ const resultExam=$('#result-exam');
+
+ if(resultExam){
+  resultExam.textContent=
+   currentExam?.title||'—';
+ }
+
+ const resultUser=$('#result-user');
+
+ if(resultUser){
+  resultUser.textContent=
+   currentUser()?.username||'—';
+ }
+
+ const resultViolations=$('#result-violations');
+
+ if(resultViolations){
+  resultViolations.textContent=
+   a?.violations||0;
+ }
+
+ const resultEnded=$('#result-ended');
+
+ if(resultEnded){
+  resultEnded.textContent=
+   fmtDate(Date.now());
+ }
+
+ const resultTime=$('#result-time');
+
+ if(resultTime){
+  resultTime.textContent=
+   formatDuration(
+    a?.durationSeconds||0
+   );
+ }
+
+ showView('result');
+}
+
+$('#result-dashboard-btn')?.addEventListener(
+ 'click',
+ ()=>{
+  currentExam=null;
+  examState=null;
+
+  openPortal();
+ }
+);
+
+/* ACTION BINDING */
+
+function bindActions(){
+ $$('[data-action]').forEach(b=>{
+  if(b.dataset.bound)return;
+
+  b.dataset.bound='1';
+
+  b.addEventListener(
+   'click',
+   ()=>{
+    const a=b.dataset.action;
+    const id=b.dataset.id;
+
+    if(a==='new-exam'){
+     openExamModal();
     }
+
+    if(a==='edit-exam'){
+     openExamModal(id);
+    }
+
+    if(a==='delete-exam'){
+     deleteExam(id);
+    }
+
+    if(a==='close-modal'){
+     closeModal();
+    }
+
+    if(a==='confirm-start'){
+     confirmStart(id);
+    }
+
+    if(a==='start-exam'){
+     startExam(id);
+    }
+
+    if(a==='view-submissions'){
+     adminPage('submissions');
+    }
+
+    if(a==='refresh-admin'){
+     db=loadDB();
+
+     renderAdminPage(
+      $('#admin-page-title')
+       ?.textContent
+       .toLowerCase()
+       .replace(' ','-')||
+      'dashboard'
+     );
+    }
+
+    if(a==='toggle-theme'){
+     toggleTheme();
+    }
+
+    if(a==='reset-demo'){
+     resetDemo();
+    }
+
+    if(a==='delete-user'){
+     deleteUser(id);
+    }
+   }
+  );
+ });
+}
+
+function deleteUser(id){
+ if(db.users.length<=1)return;
+
+ const u=db.users.find(x=>x.id===id);
+
+ if(!u)return;
+
+ if(confirm(`Delete user "${u.username}"?`)){
+  db.users=db.users.filter(
+   x=>x.id!==id
   );
 
-  document.addEventListener(
-    'paste',
-    event => {
-      if (
-        examState?.active &&
-        examState.antiCheat
-      ) {
-        event.preventDefault();
-      }
-    }
+  saveDB();
+
+  renderSettings();
+
+  toast(
+   'User deleted.',
+   'success'
   );
+ }
+}
 
-  /* ================================================================
-     RESTRICTED KEYBOARD SHORTCUTS
-  ================================================================ */
+function resetDemo(){
+ if(!confirm(
+  'Reset all demo data, exams, attempts and violation logs?'
+ ))return;
 
-  document.addEventListener(
-    'keydown',
-    event => {
-      if (
-        !examState?.active ||
-        !examState.antiCheat
-      ) {
-        return;
-      }
+ db=clone(seed);
 
-      const key =
-        (
-          event.key ||
-          ''
-        ).toLowerCase();
+ saveDB();
 
-      const modifier =
-        event.ctrlKey ||
-        event.metaKey;
+ toast(
+  'Demo data reset.',
+  'success'
+ );
 
-      const restricted =
-        key === 'f12' ||
+ openAdmin();
+}
 
-        (
-          modifier &&
-          event.shiftKey &&
-          ['i', 'j', 'c'].includes(
-            key
-          )
-        ) ||
+/* CLOCKS */
 
-        (
-          modifier &&
-          ['t', 'n', 'w', 'u'].includes(
-            key
-          )
-        ) ||
+setInterval(()=>{
+ const now=new Date().toLocaleString();
 
-        (
-          event.altKey &&
-          key === 'tab'
-        );
+ const adminClock=$('#admin-clock');
+ const examinerClock=$('#examiner-clock');
 
-      if (restricted) {
-        event.preventDefault();
+ if(adminClock){
+  adminClock.textContent=now;
+ }
 
-        const shortcut =
-          [
-            event.ctrlKey
-              ? 'Ctrl'
-              : '',
+ if(examinerClock){
+  examinerClock.textContent=now;
+ }
+},1000);
 
-            event.metaKey
-              ? 'Cmd'
-              : '',
+/* SAFE STARTUP */
 
-            event.altKey
-              ? 'Alt'
-              : '',
+function initializePortal(){
+ const required=[
+  'login-view',
+  'admin-view',
+  'admin-dashboard-page',
+  'examiner-view',
+  'examiner-dashboard-page',
+  'exam-view',
+  'exam-iframe',
+  'result-view'
+ ];
 
-            event.shiftKey
-              ? 'Shift'
-              : '',
+ const missing=required.filter(
+  id=>!document.getElementById(id)
+ );
 
-            event.key
-          ]
-            .filter(Boolean)
-            .join('+');
-
-        registerViolation(
-          `Restricted shortcut attempt: ${shortcut}`
-        );
-      }
-    }
+ if(missing.length){
+  console.error(
+   'Secure Exam Portal is missing required UI elements:',
+   missing
   );
+ }
 
-  /* ================================================================
-     BEFORE UNLOAD
-  ================================================================ */
+ db=loadDB();
 
-  window.addEventListener(
-    'beforeunload',
-    event => {
-      if (
-        examState?.active
-      ) {
-        event.preventDefault();
-        event.returnValue = '';
-      }
-    }
-  );
+ initAuthentication();
 
-  /* ================================================================
-     SUBMIT EXAM
-  ================================================================ */
+ [
+  'theme-toggle-login',
+  'theme-toggle-admin',
+  'theme-toggle-examiner'
+ ].forEach(id=>{
+  const b=$('#'+id);
 
-  $('#exam-submit-btn')?.addEventListener(
+  if(
+   b&&
+   b.dataset.themeBound!=='1'
+  ){
+   b.addEventListener(
     'click',
-    () => {
-      if (
-        !examState?.active
-      ) {
-        return;
-      }
+    toggleTheme
+   );
 
-      const confirmed =
-        confirm(
-          'Confirm that you have submitted the Google Form.\n\n' +
-          'This will permanently end this exam attempt and cannot be undone.'
-        );
-
-      if (!confirmed) {
-        return;
-      }
-
-      finishExam(
-        'Completed',
-        'Thank you for taking the exam!',
-        'Your examination session has been submitted successfully.',
-        '✓',
-        false
-      );
-    }
-  );
-
-  /* ================================================================
-     FINISH EXAM
-  ================================================================ */
-
-  function finishExam(
-    status,
-    title,
-    message,
-    icon,
-    terminated = false
-  ) {
-    if (
-      !examState?.active
-    ) {
-      return;
-    }
-
-    examState.active =
-      false;
-
-    clearInterval(timer);
-
-    timer = null;
-
-    const attempt =
-      db.attempts.find(
-        item =>
-          item.id ===
-          examState.attemptId
-      );
-
-    const endedAt =
-      Date.now();
-
-    if (attempt) {
-      attempt.status =
-        status;
-
-      attempt.endedAt =
-        endedAt;
-
-      attempt.durationSeconds =
-        Math.max(
-          0,
-          Math.floor(
-            (
-              endedAt -
-              (
-                attempt.startedAt ||
-                endedAt
-              )
-            ) / 1000
-          )
-        );
-    }
-
-    saveDB();
-
-    $('#violation-overlay').hidden =
-      true;
-
-    violationOverlayOpen =
-      false;
-
-    document.body.classList.remove(
-      'lockdown-active'
-    );
-
-    $('#exam-view')?.classList.remove(
-      'lockdown-active'
-    );
-
-    /*
-      Exit fullscreen only after the
-      exam session has been finalized.
-    */
-    exitFullscreen();
-
-    if ($('#result-icon')) {
-      $('#result-icon').textContent =
-        icon;
-
-      $('#result-icon').style.color =
-        terminated
-          ? 'var(--danger)'
-          : 'var(--success)';
-
-      $('#result-icon').style.background =
-        terminated
-          ? 'rgba(239,91,103,.12)'
-          : 'rgba(49,196,141,.12)';
-    }
-
-    if ($('#result-eyebrow')) {
-      $('#result-eyebrow').textContent =
-        terminated
-          ? 'EXAM TERMINATED'
-          : status === 'Time Expired'
-          ? 'TIME EXPIRED'
-          : 'EXAM COMPLETE';
-    }
-
-    if ($('#result-title')) {
-      $('#result-title').textContent =
-        title;
-    }
-
-    if ($('#result-message')) {
-      $('#result-message').textContent =
-        message;
-    }
-
-    if ($('#result-exam')) {
-      $('#result-exam').textContent =
-        currentExam?.title ||
-        '—';
-    }
-
-    if ($('#result-user')) {
-      $('#result-user').textContent =
-        currentUser()?.username ||
-        '—';
-    }
-
-    if ($('#result-violations')) {
-      $('#result-violations').textContent =
-        attempt?.violations ||
-        0;
-    }
-
-    if ($('#result-ended')) {
-      $('#result-ended').textContent =
-        fmtDate(endedAt);
-    }
-
-    /*
-      If result-time exists in index.html,
-      populate it automatically.
-    */
-    if ($('#result-time')) {
-      $('#result-time').textContent =
-        formatDuration(
-          attempt?.durationSeconds ||
-            0
-        );
-    }
-
-    showView('result');
+   b.dataset.themeBound='1';
   }
+ });
 
-  /* ================================================================
-     RESULT DASHBOARD BUTTON
-  ================================================================ */
+ $('#admin-logout')?.addEventListener(
+  'click',
+  logout
+ );
 
-  $('#result-dashboard-btn')?.addEventListener(
-    'click',
-    () => {
-      currentExam = null;
-      examState = null;
+ $('#examiner-logout')?.addEventListener(
+  'click',
+  logout
+ );
 
-      openPortal();
-    }
-  );
+ applyTheme();
 
-  /* ================================================================
-     VIOLATION UI GUARD
-  ================================================================ */
+ clearBrokenSession();
 
-  function syncViolationOverlay() {
-    const overlay =
-      document.getElementById(
-        'violation-overlay'
-      );
+ syncViolationOverlay();
 
-    if (!overlay) return;
+ if(session&&currentUser()){
+  openPortal();
+ }else{
+  session=null;
 
-    if (
-      !examState?.active
-    ) {
-      violationOverlayOpen =
-        false;
+  saveSession();
 
-      overlay.hidden =
-        true;
-    }
-  }
+  showView('login');
 
-  syncViolationOverlay();
+  hideLoading();
+ }
+}
 
-  /* ================================================================
-     ACTION BINDING
-  ================================================================ */
-
-  function bindActions() {
-    $$('[data-action]').forEach(
-      button => {
-        if (
-          button.dataset.bound
-        ) {
-          return;
-        }
-
-        button.dataset.bound =
-          '1';
-
-        button.addEventListener(
-          'click',
-          () => {
-            const action =
-              button.dataset.action;
-
-            const id =
-              button.dataset.id;
-
-            if (
-              action ===
-              'new-exam'
-            ) {
-              openExamModal();
-            }
-
-            if (
-              action ===
-              'edit-exam'
-            ) {
-              openExamModal(id);
-            }
-
-            if (
-              action ===
-              'delete-exam'
-            ) {
-              deleteExam(id);
-            }
-
-            if (
-              action ===
-              'close-modal'
-            ) {
-              closeModal();
-            }
-
-            if (
-              action ===
-              'confirm-start'
-            ) {
-              confirmStart(id);
-            }
-
-            if (
-              action ===
-              'start-exam'
-            ) {
-              startExam(id);
-            }
-
-            if (
-              action ===
-              'view-submissions'
-            ) {
-              adminPage(
-                'submissions'
-              );
-            }
-
-            if (
-              action ===
-              'refresh-admin'
-            ) {
-              db = loadDB();
-
-              const title =
-                $(
-                  '#admin-page-title'
-                )?.textContent ||
-                'Dashboard';
-
-              const page =
-                Object.keys(
-                  pageTitles
-                ).find(
-                  key =>
-                    pageTitles[key] ===
-                    title
-                ) ||
-                'dashboard';
-
-              renderAdminPage(
-                page
-              );
-            }
-
-            if (
-              action ===
-              'toggle-theme'
-            ) {
-              toggleTheme();
-            }
-
-            if (
-              action ===
-              'reset-demo'
-            ) {
-              resetDemo();
-            }
-
-            if (
-              action ===
-              'delete-user'
-            ) {
-              deleteUser(id);
-            }
-          }
-        );
-      }
-    );
-  }
-
-  /* ================================================================
-     USER MANAGEMENT
-  ================================================================ */
-
-  function deleteUser(id) {
-    if (
-      db.users.length <= 1
-    ) {
-      return;
-    }
-
-    const user =
-      db.users.find(
-        item =>
-          item.id === id
-      );
-
-    if (!user) return;
-
-    /*
-      Do not allow deletion of
-      the built-in admin account.
-    */
-    if (
-      user.username ===
-      'admin'
-    ) {
-      toast(
-        'The built-in admin account cannot be deleted.',
-        'error'
-      );
-
-      return;
-    }
-
-    const confirmed =
-      confirm(
-        `Delete user "${user.username}"?`
-      );
-
-    if (!confirmed) return;
-
-    db.users =
-      db.users.filter(
-        item =>
-          item.id !== id
-      );
-
-    saveDB();
-
-    renderSettings();
-
-    toast(
-      'User deleted.',
-      'success'
-    );
-  }
-
-  /* ================================================================
-     RESET DEMO
-  ================================================================ */
-
-  function resetDemo() {
-    const confirmed =
-      confirm(
-        'Reset all demo data, exams, attempts and violation logs?'
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    db = clone(seed);
-
-    saveDB();
-
-    applyTheme();
-
-    toast(
-      'Demo data reset successfully.',
-      'success'
-    );
-
-    openAdmin();
-  }
-
-  /* ================================================================
-     CLOCKS
-  ================================================================ */
-
-  setInterval(() => {
-    const now =
-      new Date().toLocaleString();
-
-    if ($('#admin-clock')) {
-      $('#admin-clock').textContent =
-        now;
-    }
-
-    if ($('#examiner-clock')) {
-      $('#examiner-clock').textContent =
-        now;
-    }
-
-    /*
-      Refresh examiner availability
-      while they remain on the dashboard.
-    */
-    if (
-      views.examiner &&
-      !views.examiner.hidden &&
-      !examState?.active
-    ) {
-      /*
-        Do not continuously rerender
-        every second. Availability is
-        refreshed when the dashboard is
-        opened/refreshed.
-      */
-    }
-  }, 1000);
-
-  /* ================================================================
-     INITIALIZE
-  ================================================================ */
-
-  function initializePortal() {
-    const required = [
-      '#login-view',
-      '#admin-view',
-      '#examiner-view',
-      '#exam-view',
-      '#result-view',
-      '#login-form',
-      '#examiner-dashboard-page',
-      '#exam-iframe',
-      '#exam-submit-btn'
-    ];
-
-    const missing =
-      required.filter(
-        selector =>
-          !$(selector)
-      );
-
-    if (missing.length) {
-      console.warn(
-        'Proctor+ missing UI elements:',
-        missing
-      );
-    }
-
-    syncViolationOverlay();
-
-    /*
-      If a previous login session exists,
-      restore the portal.
-    */
-    if (
-      session &&
-      currentUser()
-    ) {
-      openPortal();
-    } else {
-      session = null;
-      saveSession();
-      showView('login');
-    }
-  }
-
-  initializePortal();
+if(document.readyState==='loading'){
+ document.addEventListener(
+  'DOMContentLoaded',
+  initializePortal,
+  {once:true}
+ );
+}else{
+ initializePortal();
+}
 
 })();
