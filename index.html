@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
   <meta charset="UTF-8">
 
   <meta
@@ -10,111 +12,271 @@
 
   <meta
     name="description"
-    content="Secure Examination and Proctoring Portal"
+    content="Proctor+ Online Examination and Proctoring Portal"
   >
 
-  <title>Proctor+ | Secure Examination Portal</title>
+  <title>
+    Proctor+ | Online Examination Portal
+  </title>
 
   <link
     rel="stylesheet"
     href="style.css"
   >
+
 </head>
 
 <body class="dark">
 
-  <!-- =========================================================
-       TOAST NOTIFICATIONS
-       ========================================================= -->
-  <div
-    id="toast-container"
-    class="toast-container"
-    aria-live="polite"
-    aria-atomic="true"
-  ></div>
+<!-- =====================================================
+     TOAST
+===================================================== -->
+
+<div
+  id="toast-container"
+  class="toast-container"
+></div>
 
 
-  <!-- =========================================================
-       LOGIN VIEW
-       ========================================================= -->
-  <section
-    id="login-view"
-    class="view login-view"
-  >
+<!-- =====================================================
+     MODAL ROOT
+===================================================== -->
 
-    <div class="login-background">
-      <div class="background-orb orb-one"></div>
-      <div class="background-orb orb-two"></div>
-      <div class="background-grid"></div>
+<div
+  id="modal-root"
+  class="modal-root"
+  hidden
+></div>
+
+
+<!-- =====================================================
+     LOGIN VIEW
+===================================================== -->
+
+<section
+  id="login-view"
+  class="login-view"
+>
+
+  <!-- TOP BAR -->
+
+  <header class="login-topbar">
+
+    <div class="brand-mini">
+
+      <div class="brand-mark">
+        P+
+      </div>
+
+      <div>
+        <strong>
+          Proctor+
+        </strong>
+
+        <span>
+          Examination Portal
+        </span>
+      </div>
+
     </div>
 
-    <div class="login-container">
 
-      <div class="login-brand">
+    <div class="login-top-actions">
 
-        <div class="brand-mark">
-          <span>+</span>
+      <button
+        id="theme-toggle-login"
+        class="icon-btn"
+        type="button"
+        aria-label="Switch theme"
+      >
+        ☼
+      </button>
+
+      <button
+        id="admin-login-open"
+        class="admin-login-btn"
+        type="button"
+      >
+        Admin Login
+      </button>
+
+    </div>
+
+  </header>
+
+
+  <!-- MAIN LOGIN CONTENT -->
+
+  <main class="login-main">
+
+    <!-- LEFT DESCRIPTION -->
+
+    <section class="login-intro">
+
+      <div class="logo-large">
+        <span>
+          P
+        </span>
+        <strong>
+          +
+        </strong>
+      </div>
+
+      <div class="eyebrow">
+        SECURE ONLINE EXAMINATION
+      </div>
+
+      <h1>
+        Welcome to
+        <span>
+          Proctor+
+        </span>
+      </h1>
+
+      <p class="login-description">
+
+        Proctor+ is an online examination portal
+        designed to provide a structured and
+        monitored testing environment.
+
+      </p>
+
+
+      <div class="feature-list">
+
+        <div class="feature-item">
+
+          <div class="feature-icon">
+            ✓
+          </div>
+
+          <div>
+
+            <strong>
+              Secure Examination
+            </strong>
+
+            <span>
+              Monitored examination sessions with
+              configurable anti-cheat controls.
+            </span>
+
+          </div>
+
         </div>
 
-        <div>
-          <div class="brand-name">
-            Proctor<span>+</span>
+
+        <div class="feature-item">
+
+          <div class="feature-icon">
+            ◉
           </div>
 
-          <div class="brand-subtitle">
-            Secure Examination Portal
+          <div>
+
+            <strong>
+              Room-Based Access
+            </strong>
+
+            <span>
+              Multiple participants can join the
+              same examination room simultaneously.
+            </span>
+
           </div>
+
+        </div>
+
+
+        <div class="feature-item">
+
+          <div class="feature-icon">
+            ⏱
+          </div>
+
+          <div>
+
+            <strong>
+              Configurable Timer
+            </strong>
+
+            <span>
+              Examination duration can be configured
+              by the administrator.
+            </span>
+
+          </div>
+
         </div>
 
       </div>
 
 
+      <div class="login-quote">
+
+        <span>
+          “
+        </span>
+
+        <p>
+          Together we go beyond extra mile.
+        </p>
+
+      </div>
+
+    </section>
+
+
+    <!-- ROOM LOGIN -->
+
+    <section class="login-card-wrapper">
+
       <div class="login-card">
 
-        <div class="login-card-header">
+        <div class="login-card-head">
 
-          <div class="eyebrow">
-            SECURE ACCESS
-          </div>
+          <span class="eyebrow">
+            PARTICIPANT ACCESS
+          </span>
 
-          <h1>
-            Welcome back
-          </h1>
+          <h2>
+            Enter Examination Room
+          </h2>
 
           <p>
-            Sign in to access your examination portal.
+            Use the Room Number and Passcode
+            provided by your examiner.
           </p>
 
         </div>
 
 
         <form
-          id="login-form"
+          id="room-login-form"
           class="login-form"
-          autocomplete="off"
         >
 
           <div class="field">
 
             <label
               class="form-label"
-              for="login-username"
+              for="login-room"
             >
-              Username
+              Room Number
             </label>
 
-            <div class="input-wrap">
+            <div class="input-with-icon">
 
-              <span class="input-icon">
-                ◉
+              <span>
+                #
               </span>
 
               <input
-                id="login-username"
-                name="username"
+                id="login-room"
+                name="roomNumber"
                 type="text"
-                placeholder="Enter your username"
-                autocomplete="username"
+                autocomplete="off"
+                placeholder="e.g. ROOM-001"
                 required
               >
 
@@ -127,23 +289,23 @@
 
             <label
               class="form-label"
-              for="login-password"
+              for="login-passcode"
             >
-              Password
+              Passcode
             </label>
 
-            <div class="input-wrap">
+            <div class="input-with-icon">
 
-              <span class="input-icon">
-                ◆
+              <span>
+                •••
               </span>
 
               <input
-                id="login-password"
-                name="password"
+                id="login-passcode"
+                name="passcode"
                 type="password"
-                placeholder="Enter your password"
-                autocomplete="current-password"
+                autocomplete="off"
+                placeholder="Enter room passcode"
                 required
               >
 
@@ -156,634 +318,834 @@
             id="login-error"
             class="login-error"
             hidden
-            role="alert"
           ></div>
 
 
           <button
             type="submit"
-            class="primary-btn login-btn"
+            class="primary-btn login-submit"
           >
-            <span>Sign In</span>
-            <span class="button-arrow">→</span>
+            Enter Examination
           </button>
 
         </form>
 
 
-        <div class="login-footer">
+        <div class="login-help">
 
-          <div class="security-note">
-            <span class="security-dot"></span>
-            Protected examination environment
-          </div>
+          <span>
+            🔒
+          </span>
 
-          <button
-            id="theme-toggle-login"
-            class="theme-btn"
-            type="button"
-            aria-label="Switch to light mode"
-            title="Switch to light mode"
-          >
-            ☼
-          </button>
+          <p>
+            Your examination session will be
+            individually recorded after entering
+            the examination room.
+          </p>
 
         </div>
 
       </div>
 
+    </section>
 
-      <div class="login-bottom">
-        <span>Proctor+</span>
-        <span>•</span>
-        <span>Secure Assessment Platform</span>
+  </main>
+
+
+  <footer class="login-footer">
+
+    <span>
+      Proctor+ Online Examination Portal
+    </span>
+
+    <span>
+      Secure • Structured • Monitored
+    </span>
+
+  </footer>
+
+</section>
+
+
+<!-- =====================================================
+     ADMIN LOGIN MODAL
+===================================================== -->
+
+<div
+  id="admin-login-modal"
+  class="modal-root"
+  hidden
+>
+
+  <div
+    class="modal small-modal"
+    role="dialog"
+    aria-modal="true"
+  >
+
+    <div class="modal-head">
+
+      <div>
+
+        <span class="eyebrow">
+          ADMINISTRATOR
+        </span>
+
+        <h3>
+          Admin Login
+        </h3>
+
+      </div>
+
+      <button
+        id="admin-login-close"
+        type="button"
+        class="close-btn"
+        aria-label="Close"
+      >
+        ×
+      </button>
+
+    </div>
+
+
+    <form
+      id="admin-login-form"
+    >
+
+      <div class="modal-body">
+
+        <div class="field">
+
+          <label
+            class="form-label"
+            for="admin-username"
+          >
+            Username
+          </label>
+
+          <input
+            id="admin-username"
+            type="text"
+            autocomplete="username"
+            placeholder="Administrator username"
+            required
+          >
+
+        </div>
+
+
+        <div class="field">
+
+          <label
+            class="form-label"
+            for="admin-password"
+          >
+            Password
+          </label>
+
+          <input
+            id="admin-password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Administrator password"
+            required
+          >
+
+        </div>
+
+
+        <div
+          id="admin-login-error"
+          class="login-error"
+          hidden
+        ></div>
+
+      </div>
+
+
+      <div class="modal-footer">
+
+        <button
+          id="admin-login-cancel"
+          type="button"
+          class="secondary-btn"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="submit"
+          class="primary-btn"
+        >
+          Login
+        </button>
+
+      </div>
+
+    </form>
+
+  </div>
+
+</div>
+
+
+<!-- =====================================================
+     ADMIN VIEW
+===================================================== -->
+
+<section
+  id="admin-view"
+  class="app-shell"
+  hidden
+>
+
+  <!-- SIDEBAR -->
+
+  <aside
+    id="admin-sidebar"
+    class="sidebar"
+  >
+
+    <div class="sidebar-brand">
+
+      <div class="brand-mark">
+        P+
+      </div>
+
+      <div>
+
+        <strong>
+          Proctor+
+        </strong>
+
+        <span>
+          Admin Portal
+        </span>
+
       </div>
 
     </div>
 
-  </section>
+
+    <nav class="sidebar-nav">
+
+      <button
+        type="button"
+        data-admin-page="dashboard"
+        class="nav-item active"
+      >
+        <span>
+          ▦
+        </span>
+        Dashboard
+      </button>
+
+      <button
+        type="button"
+        data-admin-page="rooms"
+        class="nav-item"
+      >
+        <span>
+          ▣
+        </span>
+        Exam Rooms
+      </button>
+
+      <button
+        type="button"
+        data-admin-page="submissions"
+        class="nav-item"
+      >
+        <span>
+          ✓
+        </span>
+        Submissions
+      </button>
+
+      <button
+        type="button"
+        data-admin-page="violations"
+        class="nav-item"
+      >
+        <span>
+          !
+        </span>
+        Violation Logs
+      </button>
+
+      <button
+        type="button"
+        data-admin-page="analytics"
+        class="nav-item"
+      >
+        <span>
+          ◫
+        </span>
+        Analytics
+      </button>
+
+      <button
+        type="button"
+        data-admin-page="settings"
+        class="nav-item"
+      >
+        <span>
+          ⚙
+        </span>
+        Settings
+      </button>
+
+    </nav>
 
 
-  <!-- =========================================================
-       ADMIN VIEW
-       ========================================================= -->
-  <section
-    id="admin-view"
-    class="view app-view"
-    hidden
-  >
+    <div class="sidebar-bottom">
 
-    <aside
-      id="admin-sidebar"
-      class="sidebar"
-    >
+      <button
+        id="admin-logout"
+        type="button"
+        class="logout-btn"
+      >
+        ⇥
+        Logout
+      </button>
 
-      <div class="sidebar-brand">
+    </div>
 
-        <div class="brand-mark small">
-          <span>+</span>
-        </div>
+  </aside>
 
-        <div class="brand-name">
-          Proctor<span>+</span>
-        </div>
+
+  <!-- ADMIN MAIN -->
+
+  <main class="main-content">
+
+    <header class="topbar">
+
+      <button
+        type="button"
+        class="mobile-menu-btn"
+        data-toggle-sidebar="admin-sidebar"
+      >
+        ☰
+      </button>
+
+
+      <div>
+
+        <span class="eyebrow">
+          PROCTOR+
+        </span>
+
+        <h2 id="admin-page-title">
+          Dashboard
+        </h2>
 
       </div>
 
 
-      <div class="sidebar-user">
+      <div class="topbar-right">
 
-        <div
-          id="admin-avatar"
-          class="avatar"
-        >
-          A
-        </div>
-
-        <div class="sidebar-user-info">
-
-          <strong id="admin-user-name">
-            Administrator
-          </strong>
-
-          <span id="admin-user-role">
-            Administrator
-          </span>
-
-        </div>
-
-      </div>
-
-
-      <nav class="sidebar-nav">
-
-        <div class="nav-section-title">
-          MAIN
-        </div>
-
-        <button
-          type="button"
-          class="nav-item active"
-          data-admin-page="dashboard"
-        >
-          <span class="nav-icon">▦</span>
-          <span>Dashboard</span>
-        </button>
-
-
-        <button
-          type="button"
-          class="nav-item"
-          data-admin-page="exams"
-        >
-          <span class="nav-icon">▤</span>
-          <span>Exam Management</span>
-        </button>
-
-
-        <div class="nav-section-title">
-          MONITORING
-        </div>
-
-        <button
-          type="button"
-          class="nav-item"
-          data-admin-page="submissions"
-        >
-          <span class="nav-icon">✓</span>
-          <span>Submissions</span>
-        </button>
-
-
-        <button
-          type="button"
-          class="nav-item"
-          data-admin-page="violations"
-        >
-          <span class="nav-icon">!</span>
-          <span>Violation Logs</span>
-        </button>
-
-
-        <div class="nav-section-title">
-          REPORTING
-        </div>
-
-        <button
-          type="button"
-          class="nav-item"
-          data-admin-page="analytics"
-        >
-          <span class="nav-icon">◒</span>
-          <span>Analytics</span>
-        </button>
-
-
-        <div class="nav-section-title">
-          SYSTEM
-        </div>
-
-        <button
-          type="button"
-          class="nav-item"
-          data-admin-page="settings"
-        >
-          <span class="nav-icon">⚙</span>
-          <span>Settings</span>
-        </button>
-
-      </nav>
-
-
-      <div class="sidebar-bottom">
+        <span
+          id="admin-clock"
+          class="clock"
+        ></span>
 
         <button
           id="theme-toggle-admin"
           type="button"
-          class="sidebar-action"
-          aria-label="Switch to light mode"
+          class="icon-btn"
         >
-          <span>☼</span>
-          <span>Theme</span>
+          ☼
         </button>
 
 
-        <button
-          id="admin-logout"
-          type="button"
-          class="sidebar-action logout-action"
-        >
-          <span>↪</span>
-          <span>Logout</span>
-        </button>
-
-      </div>
-
-    </aside>
-
-
-    <main class="main-content">
-
-      <header class="topbar">
-
-        <div class="topbar-left">
-
-          <button
-            type="button"
-            class="mobile-menu-btn"
-            data-toggle-sidebar="admin-sidebar"
-            aria-label="Open menu"
-          >
-            ☰
-          </button>
-
-          <div>
-
-            <span class="topbar-label">
-              ADMINISTRATION
-            </span>
-
-            <h2 id="admin-page-title">
-              Dashboard
-            </h2>
-
-          </div>
-
-        </div>
-
-
-        <div class="topbar-right">
+        <div class="user-chip">
 
           <div
-            id="admin-clock"
-            class="clock"
+            id="admin-avatar"
+            class="avatar"
           >
-            —
+            A
           </div>
-
-          <div class="topbar-status">
-            <span class="status-dot"></span>
-            System Online
-          </div>
-
-        </div>
-
-      </header>
-
-
-      <div class="content-area">
-
-        <!-- ADMIN DASHBOARD -->
-        <section
-          id="admin-dashboard-page"
-          class="admin-page active"
-        ></section>
-
-
-        <!-- ADMIN EXAMS -->
-        <section
-          id="admin-exams-page"
-          class="admin-page"
-        ></section>
-
-
-        <!-- ADMIN SUBMISSIONS -->
-        <section
-          id="admin-submissions-page"
-          class="admin-page"
-        ></section>
-
-
-        <!-- ADMIN VIOLATIONS -->
-        <section
-          id="admin-violations-page"
-          class="admin-page"
-        ></section>
-
-
-        <!-- ADMIN ANALYTICS -->
-        <section
-          id="admin-analytics-page"
-          class="admin-page"
-        ></section>
-
-
-        <!-- ADMIN SETTINGS -->
-        <section
-          id="admin-settings-page"
-          class="admin-page"
-        ></section>
-
-      </div>
-
-    </main>
-
-  </section>
-
-
-  <!-- =========================================================
-       EXAMINER VIEW
-       ========================================================= -->
-  <section
-    id="examiner-view"
-    class="view app-view"
-    hidden
-  >
-
-    <aside
-      id="examiner-sidebar"
-      class="sidebar"
-    >
-
-      <div class="sidebar-brand">
-
-        <div class="brand-mark small">
-          <span>+</span>
-        </div>
-
-        <div class="brand-name">
-          Proctor<span>+</span>
-        </div>
-
-      </div>
-
-
-      <div class="sidebar-user">
-
-        <div
-          id="examiner-avatar"
-          class="avatar"
-        >
-          E
-        </div>
-
-        <div class="sidebar-user-info">
-
-          <strong id="examiner-user-name">
-            Examiner
-          </strong>
-
-          <span>
-            Examiner
-          </span>
-
-        </div>
-
-      </div>
-
-
-      <nav class="sidebar-nav">
-
-        <div class="nav-section-title">
-          EXAMINATION
-        </div>
-
-        <button
-          type="button"
-          class="nav-item active"
-          data-examiner-page="dashboard"
-        >
-          <span class="nav-icon">▦</span>
-          <span>My Examinations</span>
-        </button>
-
-      </nav>
-
-
-      <div class="sidebar-bottom">
-
-        <button
-          id="theme-toggle-examiner"
-          type="button"
-          class="sidebar-action"
-          aria-label="Switch to light mode"
-        >
-          <span>☼</span>
-          <span>Theme</span>
-        </button>
-
-
-        <button
-          id="examiner-logout"
-          type="button"
-          class="sidebar-action logout-action"
-        >
-          <span>↪</span>
-          <span>Logout</span>
-        </button>
-
-      </div>
-
-    </aside>
-
-
-    <main class="main-content">
-
-      <header class="topbar">
-
-        <div class="topbar-left">
-
-          <button
-            type="button"
-            class="mobile-menu-btn"
-            data-toggle-sidebar="examiner-sidebar"
-            aria-label="Open menu"
-          >
-            ☰
-          </button>
 
           <div>
 
-            <span class="topbar-label">
-              EXAMINER PORTAL
+            <strong
+              id="admin-user-name"
+            >
+              Administrator
+            </strong>
+
+            <span
+              id="admin-user-role"
+            >
+              Administrator
             </span>
 
-            <h2>
-              My Examinations
-            </h2>
-
           </div>
 
         </div>
-
-
-        <div class="topbar-right">
-
-          <div
-            id="examiner-clock"
-            class="clock"
-          >
-            —
-          </div>
-
-          <div class="topbar-status">
-            <span class="status-dot"></span>
-            Ready
-          </div>
-
-        </div>
-
-      </header>
-
-
-      <div class="content-area">
-
-        <section
-          id="examiner-dashboard-page"
-          class="examiner-page active"
-        ></section>
-
-      </div>
-
-    </main>
-
-  </section>
-
-
-  <!-- =========================================================
-       LIVE EXAM VIEW
-       ========================================================= -->
-  <section
-    id="exam-view"
-    class="view exam-view"
-    hidden
-  >
-
-    <header class="exam-header">
-
-      <div class="exam-header-left">
-
-        <div class="exam-logo">
-          <div class="brand-mark small">
-            <span>+</span>
-          </div>
-
-          <div>
-            <div class="brand-name">
-              Proctor<span>+</span>
-            </div>
-
-            <div class="exam-secure-label">
-              SECURE EXAMINATION
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-
-      <div class="exam-header-center">
-
-        <div class="live-exam-name">
-          <span
-            id="live-exam-title"
-            class="live-exam-title"
-          >
-            Examination
-          </span>
-
-          <span
-            id="live-exam-examiner"
-            class="live-exam-examiner"
-          >
-            Assigned examiner
-          </span>
-        </div>
-
-      </div>
-
-
-      <div class="exam-header-right">
-
-        <div class="exam-security-status">
-
-          <span class="security-dot"></span>
-
-          <span>
-            Monitoring Active
-          </span>
-
-        </div>
-
-
-        <div class="violation-counter">
-
-          <span class="counter-label">
-            Violations
-          </span>
-
-          <strong id="exam-violations">
-            0 / 3
-          </strong>
-
-        </div>
-
-
-        <div class="exam-timer-box">
-
-          <span class="timer-label">
-            TIME REMAINING
-          </span>
-
-          <strong
-            id="exam-timer"
-            class="exam-timer"
-          >
-            00:00
-          </strong>
-
-        </div>
-
-
-        <button
-          id="exam-submit-btn"
-          type="button"
-          class="submit-exam-btn"
-        >
-          Submit Exam
-        </button>
 
       </div>
 
     </header>
 
 
-    <div class="exam-progress-track">
+    <div class="page-container">
+
+      <section
+        id="admin-dashboard-page"
+        class="admin-page active"
+      ></section>
+
+      <section
+        id="admin-rooms-page"
+        class="admin-page"
+      ></section>
+
+      <section
+        id="admin-submissions-page"
+        class="admin-page"
+      ></section>
+
+      <section
+        id="admin-violations-page"
+        class="admin-page"
+      ></section>
+
+      <section
+        id="admin-analytics-page"
+        class="admin-page"
+      ></section>
+
+      <section
+        id="admin-settings-page"
+        class="admin-page"
+      ></section>
+
+    </div>
+
+  </main>
+
+</section>
+
+
+<!-- =====================================================
+     ROOM / PARTICIPANT VIEW
+===================================================== -->
+
+<section
+  id="room-view"
+  class="app-shell"
+  hidden
+>
+
+  <aside
+    id="room-sidebar"
+    class="sidebar"
+  >
+
+    <div class="sidebar-brand">
+
+      <div class="brand-mark">
+        P+
+      </div>
+
+      <div>
+
+        <strong>
+          Proctor+
+        </strong>
+
+        <span>
+          Examination Portal
+        </span>
+
+      </div>
+
+    </div>
+
+
+    <div class="room-sidebar-card">
+
+      <span class="eyebrow">
+        ROOM
+      </span>
+
+      <strong
+        id="room-number-display"
+      >
+        ROOM-001
+      </strong>
+
+      <span>
+        Active Examination Room
+      </span>
+
+    </div>
+
+
+    <div class="sidebar-bottom">
+
+      <button
+        id="room-logout"
+        type="button"
+        class="logout-btn"
+      >
+        ⇥
+        Exit Room
+      </button>
+
+    </div>
+
+  </aside>
+
+
+  <main class="main-content">
+
+    <header class="topbar">
+
+      <button
+        type="button"
+        class="mobile-menu-btn"
+        data-toggle-sidebar="room-sidebar"
+      >
+        ☰
+      </button>
+
+
+      <div>
+
+        <span class="eyebrow">
+          PARTICIPANT PORTAL
+        </span>
+
+        <h2>
+          Examination Room
+        </h2>
+
+      </div>
+
+
+      <div class="topbar-right">
+
+        <span
+          id="room-clock"
+          class="clock"
+        ></span>
+
+        <button
+          id="theme-toggle-room"
+          type="button"
+          class="icon-btn"
+        >
+          ☼
+        </button>
+
+
+        <div class="user-chip">
+
+          <div
+            id="room-avatar"
+            class="avatar"
+          >
+            P
+          </div>
+
+          <div>
+
+            <strong
+              id="room-user-name"
+            >
+              Participant
+            </strong>
+
+            <span>
+              Examination Candidate
+            </span>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </header>
+
+
+    <div class="page-container">
+
+      <div class="page-head">
+
+        <div>
+
+          <span class="eyebrow">
+            EXAMINATION
+          </span>
+
+          <h3
+            id="room-exam-title"
+          >
+            Examination
+          </h3>
+
+          <p
+            id="room-exam-description"
+          >
+            Examination description
+          </p>
+
+        </div>
+
+        <div
+          id="room-status"
+        ></div>
+
+      </div>
+
+
+      <div class="exam-info-grid">
+
+        <div class="info-card">
+
+          <span>
+            Duration
+          </span>
+
+          <strong
+            id="room-duration"
+          >
+            60 minutes
+          </strong>
+
+        </div>
+
+
+        <div class="info-card">
+
+          <span>
+            Anti-Cheat
+          </span>
+
+          <strong
+            id="room-anticheat"
+          >
+            Enabled
+          </strong>
+
+        </div>
+
+
+        <div class="info-card">
+
+          <span>
+            Your Submissions
+          </span>
+
+          <strong
+            id="room-submissions-count"
+          >
+            0
+          </strong>
+
+        </div>
+
+
+        <div class="info-card">
+
+          <span>
+            Session ID
+          </span>
+
+          <strong
+            id="room-session-id"
+          >
+            —
+          </strong>
+
+        </div>
+
+      </div>
+
+
       <div
-        id="exam-progress"
-        class="exam-progress-fill"
-      ></div>
+        class="panel room-start-panel"
+      >
+
+        <div>
+
+          <span class="eyebrow">
+            READY
+          </span>
+
+          <h3>
+            Start Your Examination
+          </h3>
+
+          <p>
+            Multiple participants can take this
+            examination simultaneously. Your
+            examination session and violations are
+            tracked independently.
+          </p>
+
+        </div>
+
+
+        <div
+          id="room-exam-action"
+        ></div>
+
+      </div>
+
+
+      <div
+        class="notice"
+        style="margin-top:18px"
+      >
+
+        <strong>
+          Important:
+        </strong>
+
+        If the Google Form becomes unavailable
+        after submission, you can refresh the form
+        inside the examination screen without
+        ending your session.
+
+      </div>
+
+    </div>
+
+  </main>
+
+</section>
+
+
+<!-- =====================================================
+     LIVE EXAM VIEW
+===================================================== -->
+
+<section
+  id="exam-view"
+  class="exam-view"
+  hidden
+>
+
+  <header class="exam-topbar">
+
+    <div class="exam-title-area">
+
+      <div class="brand-mark">
+        P+
+      </div>
+
+      <div>
+
+        <span class="eyebrow">
+          LIVE EXAMINATION
+        </span>
+
+        <h2
+          id="live-exam-title"
+        >
+          Examination
+        </h2>
+
+        <span
+          id="live-exam-examiner"
+        >
+          Participant
+        </span>
+
+      </div>
+
     </div>
 
 
-    <div class="exam-info-bar">
+    <div class="exam-controls">
 
-      <div class="exam-info-left">
+      <div class="exam-violation-pill">
 
-        <span class="info-icon">
-          ⓘ
+        <span>
+          Violations
         </span>
 
-        <span id="exam-instructions">
-          Please complete the examination and submit it through the portal.
-        </span>
+        <strong
+          id="exam-violations"
+        >
+          0 / 3
+        </strong>
 
       </div>
 
-      <div class="exam-info-right">
 
-        <span class="secure-badge">
-          SECURE MODE
-        </span>
-
+      <div
+        id="exam-timer"
+        class="exam-timer"
+      >
+        60:00
       </div>
+
+
+      <button
+        id="refresh-form-btn"
+        type="button"
+        class="secondary-btn"
+      >
+        ↻ Refresh Form
+      </button>
+
+
+      <button
+        id="exam-submit-btn"
+        type="button"
+        class="primary-btn"
+      >
+        Submit Exam
+      </button>
 
     </div>
 
-
-    <main class="exam-body">
-
-      <div class="exam-frame-container">
-
-        <iframe
-          id="exam-iframe"
-          class="exam-iframe"
-          title="Google Form Examination"
-          src="about:blank"
-          allow="fullscreen"
-          referrerpolicy="strict-origin-when-cross-origin"
-        ></iframe>
-
-      </div>
-
-    </main>
-
-  </section>
+  </header>
 
 
-  <!-- =========================================================
-       VIOLATION OVERLAY
-       ========================================================= -->
+  <div class="exam-progress-container">
+
+    <div
+      id="exam-progress"
+      class="exam-progress"
+    ></div>
+
+  </div>
+
+
+  <div class="exam-info-strip">
+
+    <span
+      id="exam-instructions"
+    >
+      Examination information
+    </span>
+
+  </div>
+
+
+  <main class="exam-frame-wrapper">
+
+    <iframe
+      id="exam-iframe"
+      class="exam-iframe"
+      title="Google Form Examination"
+      allow="fullscreen"
+      referrerpolicy="no-referrer-when-downgrade"
+    ></iframe>
+
+  </main>
+
+
+  <!-- VIOLATION OVERLAY -->
+
   <div
     id="violation-overlay"
     class="violation-overlay"
@@ -796,72 +1158,50 @@
         !
       </div>
 
-
-      <div class="eyebrow danger-text">
-        SECURITY ALERT
-      </div>
-
+      <span class="eyebrow">
+        SECURITY WARNING
+      </span>
 
       <h2>
-        Examination Warning
+        Violation Detected
       </h2>
 
-
-      <p class="violation-main-message">
-        A proctoring violation has been detected.
+      <p
+        id="violation-reason"
+      >
+        Security event detected.
       </p>
 
 
-      <div class="violation-reason-box">
+      <div class="violation-count">
 
-        <span class="reason-label">
-          DETECTED EVENT
-        </span>
-
-        <strong id="violation-reason">
-          Security event detected.
+        <strong
+          id="overlay-count"
+        >
+          1
         </strong>
 
-      </div>
+        <span>
+          /
+        </span>
 
+        <strong
+          id="overlay-max"
+        >
+          3
+        </strong>
 
-      <div class="violation-count-box">
-
-        <div>
-          <span>
-            Current violations
-          </span>
-
-          <strong id="overlay-count">
-            0
-          </strong>
-        </div>
-
-        <div class="count-divider"></div>
-
-        <div>
-          <span>
-            Maximum allowed
-          </span>
-
-          <strong id="overlay-max">
-            3
-          </strong>
-        </div>
+        <span>
+          violations
+        </span>
 
       </div>
-
-
-      <p class="violation-warning">
-        Continued violations may automatically terminate your examination.
-        Return to the examination only when you are ready to continue.
-      </p>
 
 
       <button
         id="resume-exam-btn"
         type="button"
-        class="primary-btn violation-resume-btn"
+        class="primary-btn"
       >
         Return to Examination
       </button>
@@ -870,143 +1210,137 @@
 
   </div>
 
+</section>
 
-  <!-- =========================================================
-       RESULT VIEW
-       ========================================================= -->
-  <section
-    id="result-view"
-    class="view result-view"
-    hidden
-  >
 
-    <div class="result-background">
-      <div class="background-orb orb-one"></div>
-      <div class="background-orb orb-two"></div>
-      <div class="background-grid"></div>
+<!-- =====================================================
+     RESULT VIEW
+===================================================== -->
+
+<section
+  id="result-view"
+  class="result-view"
+  hidden
+>
+
+  <div class="result-card">
+
+    <div
+      id="result-icon"
+      class="result-icon"
+    >
+      ✓
     </div>
 
 
-    <div class="result-container">
-
-      <div
-        id="result-icon"
-        class="result-icon"
-      >
-        ✓
-      </div>
+    <span
+      id="result-eyebrow"
+      class="eyebrow"
+    >
+      EXAM COMPLETE
+    </span>
 
 
-      <span
-        id="result-eyebrow"
-        class="eyebrow"
-      >
-        EXAM COMPLETE
-      </span>
+    <h1
+      id="result-title"
+    >
+      Thank you for taking the exam!
+    </h1>
 
 
-      <h1 id="result-title">
-        Thank you for taking the exam!
-      </h1>
+    <p
+      id="result-message"
+    >
+      Your examination session has been submitted successfully.
+    </p>
 
 
-      <p
-        id="result-message"
-        class="result-message"
-      >
-        Your examination session has been submitted successfully.
-      </p>
+    <div class="result-details">
 
+      <div>
 
-      <div class="result-summary">
+        <span>
+          Examination
+        </span>
 
-        <div class="result-row">
-
-          <span>
-            Examination
-          </span>
-
-          <strong id="result-exam">
-            —
-          </strong>
-
-        </div>
-
-
-        <div class="result-row">
-
-          <span>
-            Examiner
-          </span>
-
-          <strong id="result-user">
-            —
-          </strong>
-
-        </div>
-
-
-        <div class="result-row">
-
-          <span>
-            Violations
-          </span>
-
-          <strong id="result-violations">
-            0
-          </strong>
-
-        </div>
-
-
-        <div class="result-row">
-
-          <span>
-            Session Ended
-          </span>
-
-          <strong id="result-ended">
-            —
-          </strong>
-
-        </div>
+        <strong
+          id="result-exam"
+        >
+          —
+        </strong>
 
       </div>
 
 
-      <button
-        id="result-dashboard-btn"
-        type="button"
-        class="primary-btn result-dashboard-btn"
-      >
-        Return to Dashboard
-        <span>→</span>
-      </button>
+      <div>
+
+        <span>
+          Participant
+        </span>
+
+        <strong
+          id="result-user"
+        >
+          —
+        </strong>
+
+      </div>
 
 
-      <div class="result-footer">
-        Proctor+ Secure Examination Portal
+      <div>
+
+        <span>
+          Violations
+        </span>
+
+        <strong
+          id="result-violations"
+        >
+          0
+        </strong>
+
+      </div>
+
+
+      <div>
+
+        <span>
+          Ended
+        </span>
+
+        <strong
+          id="result-ended"
+        >
+          —
+        </strong>
+
       </div>
 
     </div>
 
-  </section>
+
+    <button
+      id="result-dashboard-btn"
+      type="button"
+      class="primary-btn"
+    >
+      Return to Room
+    </button>
+
+  </div>
+
+</section>
 
 
-  <!-- =========================================================
-       MODAL ROOT
-       ========================================================= -->
-  <div
-    id="modal-root"
-    class="modal-root"
-    hidden
-  ></div>
+<!-- =====================================================
+     JAVASCRIPT
+===================================================== -->
 
-
-  <!-- =========================================================
-       JAVASCRIPT
-       ========================================================= -->
-  <script src="app.js"></script>
+<script
+  src="app.js"
+  defer
+></script>
 
 </body>
+
 </html>
