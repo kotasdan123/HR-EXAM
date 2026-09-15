@@ -13,39 +13,53 @@
 
   <!-- LOGIN: first screen -->
   <section id="login-view" class="view active">
-    <div class="login-shell">
-      <div class="brand-panel">
-        <div class="brand-mark">✓</div>
-        <span class="eyebrow">SECURE EXAMINATION PORTAL</span>
-        <h1>Assess. Monitor. Complete.</h1>
-        <p>One secure workspace for examiners and administrators.</p>
-        <div class="login-feature-list">
-          <span>✓ Configurable examinations</span>
-          <span>✓ Progress and violation monitoring</span>
-          <span>✓ Dark and light themes</span>
+    <div class="login-shell proctor-login">
+      <div class="brand-panel proctor-brand">
+        <div class="proctor-logo"><span>+</span></div>
+        <span class="eyebrow">SECURE ONLINE PROCTORING</span>
+        <h1>Proctor<span>+</span></h1>
+        <p class="proctor-tagline">A smarter and more secure way to take online examinations.</p>
+
+        <div class="proctor-benefits">
+          <div class="benefit-item">
+            <div class="benefit-icon">⏱</div>
+            <div><strong>Built-in Timer</strong><span>Keep every examination on schedule with configurable time limits.</span></div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">✓</div>
+            <div><strong>Proctored Sessions</strong><span>Monitor common tab switching, focus loss and full-screen events.</span></div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">▣</div>
+            <div><strong>Simple Exam Management</strong><span>Manage examinations, submissions and security activity in one portal.</span></div>
+          </div>
         </div>
       </div>
-      <div class="login-card">
+
+      <div class="login-card proctor-card">
         <div class="theme-row">
           <button id="theme-toggle-login" class="icon-btn" type="button" title="Toggle theme">☼</button>
         </div>
         <div class="login-heading">
-          <span class="eyebrow">WELCOME BACK</span>
-          <h2>Sign in</h2>
-          <p>Use your assigned account to continue.</p>
+          <span class="eyebrow">WELCOME TO PROCTOR+</span>
+          <h2>Sign in to continue</h2>
+          <p>Enter your assigned username and password.</p>
         </div>
+
         <form id="login-form" novalidate>
           <label for="login-username">Username</label>
-          <input id="login-username" autocomplete="username" required placeholder="Enter username">
+          <input id="login-username" type="text" autocomplete="username" required placeholder="Enter your username">
+
           <label for="login-password">Password</label>
-          <input id="login-password" type="password" autocomplete="current-password" required placeholder="Enter password">
+          <input id="login-password" type="password" autocomplete="current-password" required placeholder="Enter your password">
+
           <button class="primary-btn full" type="submit">Sign In <span>→</span></button>
-          <p id="login-error" class="form-error" hidden></p>
+          <p id="login-error" class="form-error login-warning" role="alert" hidden></p>
         </form>
-        <div class="demo-box">
-          <strong>Demo accounts</strong>
-          <span>Examiner: <b>test</b> / <b>test</b></span>
-          <span>Admin: <b>admin</b> / <b>123admin</b></span>
+
+        <div class="login-security-note">
+          <span class="security-dot"></span>
+          <span>Your examination access is protected by your assigned account.</span>
         </div>
       </div>
     </div>
