@@ -1,74 +1,205 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Proctored Exam & Monitoring Dashboard</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Secure Exam Proctoring Environment</title>
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <!-- Top Navigation Settings Bar -->
-  <header id="top-nav">
-    <div class="logo">ProctorShield</div>
-    <div class="nav-actions">
-      <button id="nav-login-btn" class="btn-secondary">Login Settings</button>
-      <button id="nav-logout-btn" class="btn-danger" hidden>Logout</button>
+  <!-- ============================================================
+       SCREEN 0: HOME / LANDING SCREEN
+       Entry point. "Login" (top-right) goes to Admin/Examiner login.
+       "Get Started" goes to the student registration screen.
+  ============================================================= -->
+  <div id="home-screen" class="screen active">
+    <button id="admin-login-link" class="text-link top-right">Login</button>
+    <div class="start-card home-card">
+      <h1>Secure Exam Environment</h1>
+      <p class="subtitle">Self-hosted proctoring for online assessments.</p>
+      <button id="get-started-btn" class="primary-btn">Get Started</button>
+      <p class="footer-note">Taking an exam? Click "Get Started" above.<br />Administrator or examiner? Use the Login link in the top right.</p>
     </div>
-  </header>
+  </div>
 
   <!-- ============================================================
-       SCREEN 1: LOGIN SCREEN (Admin / Examiner / Superadmin)
+       SCREEN: ADMIN / EXAMINER LOGIN
   ============================================================= -->
-  <div id="login-screen" class="screen">
-    <div class="card login-card">
-      <h2>Staff Portal Login</h2>
-      <p class="subtitle">Access monitoring, reports, and user management.</p>
-      
-      <form id="login-form">
-        <label for="login-username">Username</label>
-        <input type="text" id="login-username" placeholder="e.g. admin" required />
+  <div id="admin-login-screen" class="screen">
+    <div class="start-card">
+      <button id="admin-back-btn" class="text-link">&larr; Back</button>
+      <h1>Admin / Examiner Login</h1>
+      <p class="subtitle">Sign in to configure the exam and review violation logs.</p>
 
-        <label for="login-password">Password</label>
-        <input type="password" id="login-password" placeholder="••••••••" required />
+      <form id="admin-login-form" autocomplete="off">
+        <label for="admin-username">Username</label>
+        <input type="text" id="admin-username" placeholder="Username" required />
 
-        <button type="submit" class="btn-primary">Sign In</button>
-        <button type="button" id="login-back-btn" class="btn-link">Back to Home</button>
-        <p id="login-error" class="error-text" hidden></p>
+        <label for="admin-password">Password</label>
+        <input type="password" id="admin-password" placeholder="Password" required />
+
+        <button type="submit" class="primary-btn">Sign In</button>
+        <p id="admin-login-error" class="error-text" hidden></p>
       </form>
     </div>
   </div>
 
   <!-- ============================================================
-       SCREEN 2: LANDING / START SCREEN
+       SCREEN: ADMIN / EXAMINER DASHBOARD
   ============================================================= -->
-  <div id="start-screen" class="screen active">
-    <div class="card start-card">
-      <h1>Online Examination</h1>
-      <p class="subtitle">Click "Get Started" when you are ready to begin the test.</p>
+  <div id="admin-dashboard-screen" class="screen screen-scrollable">
+    <div class="start-card admin-card">
+      <div class="admin-header-row">
+        <div>
+          <h1>Admin Dashboard</h1>
+          <p id="admin-welcome" class="subtitle small-subtitle">—</p>
+        </div>
+        <button id="admin-logout-btn" class="text-link">Logout</button>
+      </div>
+
+      <!-- ANALYTICS -->
+      <h3>Analytics</h3>
+      <div id="analytics-grid" class="stat-grid">
+        <div class="stat-card"><span class="stat-value" id="stat-total">0</span><span class="stat-label">Total Sessions</span></div>
+        <div class="stat-card"><span class="stat-value" id="stat-progress">0</span><span class="stat-label">In Progress</span></div>
+        <div class="stat-card"><span class="stat-value success" id="stat-completed">0</span><span class="stat-label">Completed</span></div>
+        <div class="stat-card"><span class="stat-value warning" id="stat-expired">0</span><span class="stat-label">Time Expired</span></div>
+        <div class="stat-card"><span class="stat-value danger" id="stat-disqualified">0</span><span class="stat-label">Disqualified</span></div>
+        <div class="stat-card"><span class="stat-value" id="stat-avg-violations">0.0</span><span class="stat-label">Avg. Violations</span></div>
+      </div>
+      <div id="analytics-bar" class="analytics-bar" aria-hidden="true">
+        <div id="bar-completed" class="bar-segment bar-completed"></div>
+        <div id="bar-expired" class="bar-segment bar-expired"></div>
+        <div id="bar-disqualified" class="bar-segment bar-disqualified"></div>
+        <div id="bar-progress" class="bar-segment bar-progress"></div>
+      </div>
+
+      <!-- SUBMISSIONS MONITORING -->
+      <h3>Submissions Monitoring</h3>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Started</th>
+              <th>Ended</th>
+              <th>Status</th>
+              <th>Violations</th>
+            </tr>
+          </thead>
+          <tbody id="submissions-body">
+            <tr><td colspan="5" class="empty-log">No exam sessions yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- EXAM SETTINGS -->
+      <h3>Exam Settings</h3>
+      <form id="admin-settings-form" autocomplete="off">
+        <label for="setting-duration">Exam Duration (minutes)</label>
+        <input type="number" id="setting-duration" min="1" required />
+
+        <label for="setting-max-violations">Max Violations Allowed</label>
+        <input type="number" id="setting-max-violations" min="1" required />
+
+        <label for="setting-form-url">Google Form Embed URL</label>
+        <input type="text" id="setting-form-url" placeholder="https://docs.google.com/forms/d/e/.../viewform?embedded=true" required />
+
+        <button type="submit" class="primary-btn">Save Settings</button>
+        <p id="admin-settings-saved" class="success-text" hidden>Settings saved for the next exam session.</p>
+      </form>
+
+      <!-- USER MANAGEMENT (superadmin only) -->
+      <div id="user-management-section" hidden>
+        <h3>Manage Admin &amp; Examiner Users</h3>
+        <form id="add-user-form" autocomplete="off">
+          <label for="new-user-username">Username</label>
+          <input type="text" id="new-user-username" placeholder="e.g. jsmith" required />
+
+          <label for="new-user-password">Password</label>
+          <input type="password" id="new-user-password" placeholder="Temporary password" required />
+
+          <label for="new-user-role">Role</label>
+          <select id="new-user-role">
+            <option value="examiner">Examiner</option>
+            <option value="admin">Admin</option>
+            <option value="superadmin">Superadmin</option>
+          </select>
+
+          <button type="submit" class="primary-btn">Add User</button>
+          <p id="add-user-error" class="error-text" hidden></p>
+          <p id="add-user-success" class="success-text" hidden>User added.</p>
+        </form>
+
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="user-list-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- VIOLATION LOG -->
+      <h3>Violation Log</h3>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Name</th>
+              <th>#</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="violation-log-body">
+            <tr><td colspan="4" class="empty-log">No violations logged yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 1: START / REGISTRATION SCREEN
+       Collects student identity before the exam is unlocked.
+  ============================================================= -->
+  <div id="start-screen" class="screen screen-scrollable">
+    <button id="student-back-btn" class="text-link">&larr; Back</button>
+    <div class="start-card">
+      <h1>Secure Exam Environment</h1>
+      <p class="subtitle">Please read the instructions carefully before beginning.</p>
 
       <form id="start-form" autocomplete="off">
         <label for="student-name">Full Name</label>
-        <input type="text" id="student-name" placeholder="e.g. Jane Doe" required />
+        <input type="text" id="student-name" placeholder="e.g. Juan Dela Cruz" required />
 
         <div class="rules-box">
-          <h3>Exam Rules & Conditions</h3>
+          <h3>Exam Rules</h3>
           <ul>
-            <li>Full-screen mode will be locked during the test.</li>
-            <li>Tab switching, window minimization, or loss of focus triggers violations.</li>
-            <li>Violation detection is active <strong>only while the test timer is running</strong>.</li>
-            <li>Reaching <strong>3 violations</strong> results in automatic disqualification.</li>
+            <li>The exam will run in <strong>full-screen mode</strong>. Do not exit it.</li>
+            <li>Switching tabs, minimizing the window, or clicking outside the exam counts as a violation.</li>
+            <li>Copy, paste, right-click, and developer tools are disabled.</li>
+            <li><strong>3 violations</strong> will result in automatic disqualification.</li>
           </ul>
         </div>
 
-        <button type="submit" id="get-started-btn" class="btn-primary">Get Started</button>
+        <button type="submit" id="start-exam-btn">Start Exam (Enter Full-Screen)</button>
         <p id="start-error" class="error-text" hidden></p>
       </form>
     </div>
   </div>
 
   <!-- ============================================================
-       SCREEN 3: ACTIVE EXAM SCREEN
+       SCREEN 2: EXAM DASHBOARD
+       Holds the student info bar, timer, violation tracker, and
+       the sandboxed Google Form iframe.
   ============================================================= -->
   <div id="exam-screen" class="screen">
     <header id="exam-header">
@@ -84,144 +215,71 @@
         <span class="label">Violations</span>
         <span id="violation-tracker" class="value violations">0 / 3</span>
       </div>
+      <button id="submit-exam-btn" class="submit-exam-btn">I've Submitted the Form — End Exam</button>
     </header>
 
     <main id="form-container">
+      <!-- Placeholder Google Form URL — replace with your real embed link -->
       <iframe
         id="exam-iframe"
-        src="https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?embedded=true"
-        title="Exam Form">
+        src="https://docs.google.com/forms/d/e/1FAIpQLSeK35oh4wlzl4-EFWxgU1H5BGgQu02UOhgK392l8CIY8Cho0A/viewform?usp=header"
+        title="Exam Form"
+        loading="eager"
+        referrerpolicy="no-referrer">
         Loading exam…
       </iframe>
     </main>
   </div>
 
-  <!-- VIOLATION OVERLAY (Strictly Hidden by Default) -->
+  <!-- ============================================================
+       OVERLAY: VIOLATION / INTERRUPTION MODAL
+       Masks the exam completely until the student re-locks in.
+  ============================================================= -->
   <div id="violation-overlay" class="overlay" hidden>
-    <div class="card overlay-card">
+    <div class="overlay-card violation-card">
       <div class="icon-warning">&#9888;</div>
       <h2>VIOLATION DETECTED</h2>
-      <p id="violation-reason">Exited full-screen or lost window focus.</p>
+      <p id="violation-reason">You left the exam environment.</p>
       <p class="violation-count-text">
         Violation <span id="overlay-violation-count">1</span> of 3
       </p>
-      <button id="resume-btn" class="btn-primary">Resume &amp; Re-lock Screen</button>
+      <button id="resume-btn">Resume &amp; Re-lock Screen</button>
     </div>
   </div>
 
   <!-- ============================================================
-       SCREEN 4: DISQUALIFIED SCREEN
+       SCREEN: SESSION ENDED (Completed / Time Expired)
+       Shown for the two non-violation ways an exam session can end.
+  ============================================================= -->
+  <div id="session-ended-screen" class="screen">
+    <div class="start-card disqualified-card">
+      <div class="icon-disqualified" id="session-ended-icon">&#9989;</div>
+      <h1 id="session-ended-title">Exam Submitted</h1>
+      <p class="subtitle" id="session-ended-subtitle">Your exam session has ended.</p>
+      <div class="dq-details">
+        <p><strong>Student:</strong> <span id="se-name">—</span></p>
+        <p><strong>Total Violations:</strong> <span id="se-count">0</span></p>
+        <p><strong>Time Ended:</strong> <span id="se-time">—</span></p>
+      </div>
+      <p class="footer-note">You may now close this window.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREEN 3: DISQUALIFICATION SCREEN
+       Final, permanent state after the 3rd violation.
   ============================================================= -->
   <div id="disqualified-screen" class="screen">
-    <div class="card disqualified-card">
+    <div class="start-card disqualified-card">
       <div class="icon-disqualified">&#10060;</div>
       <h1>Exam Terminated</h1>
-      <p class="subtitle">Maximum violation limit reached during the active exam session.</p>
+      <p class="subtitle">You have been disqualified for exceeding the maximum allowed violations.</p>
       <div class="dq-details">
-        <p><strong>Student Name:</strong> <span id="dq-name">—</span></p>
+        <p><strong>Student:</strong> <span id="dq-name">—</span></p>
         <p><strong>Total Violations:</strong> <span id="dq-count">3</span></p>
         <p><strong>Time of Termination:</strong> <span id="dq-time">—</span></p>
       </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       SCREEN 5: ADMIN / EXAMINER MONITORING DASHBOARD
-  ============================================================= -->
-  <div id="dashboard-screen" class="screen">
-    <div class="dashboard-container">
-      
-      <div class="dash-header">
-        <div>
-          <h2>Monitoring &amp; Submissions Dashboard</h2>
-          <p class="subtitle">Welcome, <span id="user-display-role">User</span></p>
-        </div>
-        <div class="dash-tabs">
-          <button id="tab-overview-btn" class="tab-btn active">Overview &amp; Analytics</button>
-          <button id="tab-users-btn" class="tab-btn" hidden>User Settings (Superadmin)</button>
-        </div>
-      </div>
-
-      <!-- ANALYTICAL DATA STATS CARDS -->
-      <div class="stats-grid">
-        <div class="stat-card">
-          <span class="stat-title">Total Submissions</span>
-          <span id="stat-total" class="stat-value">0</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-title">Passing Rate</span>
-          <span id="stat-pass-rate" class="stat-value text-success">0%</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-title">Total Violations Logged</span>
-          <span id="stat-violations" class="stat-value text-warning">0</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-title">Disqualifications</span>
-          <span id="stat-disqualified" class="stat-value text-danger">0</span>
-        </div>
-      </div>
-
-      <!-- TAB 1: SUBMISSIONS & MONITORING TABLE (Name Only) -->
-      <section id="tab-overview" class="dash-section active">
-        <h3>Live Exam Submissions</h3>
-        <div class="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Student Name</th>
-                <th>Status</th>
-                <th>Score</th>
-                <th>Violations Committed</th>
-                <th>Submitted / Terminated At</th>
-              </tr>
-            </thead>
-            <tbody id="submissions-table-body">
-              <!-- Dynamically populated -->
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- TAB 2: SUPERADMIN USER SETTINGS -->
-      <section id="tab-users" class="dash-section">
-        <h3>Add &amp; Manage System Users</h3>
-        <div class="user-management-grid">
-          <form id="add-user-form" class="card">
-            <h4>Add New Staff Account</h4>
-            <label for="new-username">Username</label>
-            <input type="text" id="new-username" required />
-
-            <label for="new-password">Password</label>
-            <input type="password" id="new-password" required />
-
-            <label for="new-role">Role</label>
-            <select id="new-role">
-              <option value="examiner">Examiner</option>
-              <option value="admin">Admin</option>
-              <option value="superadmin">Superadmin</option>
-            </select>
-
-            <button type="submit" class="btn-primary">Add User</button>
-            <p id="add-user-msg" class="msg-text" hidden></p>
-          </form>
-
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Username</th>
-                  <th>Role</th>
-                </tr>
-              </thead>
-              <tbody id="users-table-body">
-                <!-- Dynamically populated -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
+      <p class="footer-note">Please contact your exam administrator for further instructions.</p>
     </div>
   </div>
 
