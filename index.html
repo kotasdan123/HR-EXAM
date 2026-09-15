@@ -1,296 +1,1159 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark light">
-  <title>Proctor+ | Examination Portal</title>
-  <link rel="stylesheet" href="style.css">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <meta
+    name="color-scheme"
+    content="dark light"
+  >
+
+  <meta
+    name="description"
+    content="Proctor+ is a centralized online examination portal designed for shared examination rooms, independent participant sessions, configurable proctoring, examination timing and centralized monitoring."
+  >
+
+  <title>
+    Proctor+ | Online Examination Portal
+  </title>
+
+  <link
+    rel="stylesheet"
+    href="style.css"
+  >
+
+  <style>
+
+    /* =========================================================
+       PROCTOR+ ROOM LOGIN
+       ========================================================= */
+
+    .login-topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      padding: 24px 30px;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    .login-topbar button {
+      pointer-events: auto;
+    }
+
+    .admin-access {
+      border: 1px solid var(--border-color, rgba(255,255,255,.12));
+      background: var(--bg-panel, rgba(255,255,255,.05));
+      color: var(--text-main, #fff);
+      padding: 11px 18px;
+      border-radius: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .2s ease;
+    }
+
+    .admin-access:hover {
+      transform: translateY(-1px);
+      opacity: .9;
+    }
+
+    .proctor-login {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(380px, .85fr);
+      gap: 40px;
+      align-items: center;
+      padding: 90px 7vw 50px;
+    }
+
+    .proctor-brand {
+      max-width: 760px;
+    }
+
+    .proctor-logo {
+      width: 64px;
+      height: 64px;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      background: linear-gradient(
+        135deg,
+        #617cff,
+        #8d6bff
+      );
+      color: #fff;
+      font-size: 32px;
+      font-weight: 900;
+      margin-bottom: 25px;
+      box-shadow:
+        0 18px 50px rgba(92,112,255,.25);
+    }
+
+    .proctor-brand h1 {
+      font-size: clamp(48px, 7vw, 84px);
+      line-height: .95;
+      margin: 8px 0 18px;
+      letter-spacing: -4px;
+    }
+
+    .proctor-brand h1 span {
+      color: #7187ff;
+    }
+
+    .proctor-tagline {
+      max-width: 650px;
+      font-size: 18px;
+      line-height: 1.7;
+      color: var(--text-dim, #9ca3b4);
+      margin-bottom: 35px;
+    }
+
+    .proctor-benefits {
+      display: grid;
+      gap: 14px;
+      max-width: 700px;
+    }
+
+    .benefit-item {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 14px;
+      align-items: start;
+      padding: 16px;
+      border: 1px solid var(--border-color, rgba(255,255,255,.08));
+      background: var(--bg-panel, rgba(255,255,255,.035));
+      border-radius: 14px;
+    }
+
+    .benefit-icon {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      background: rgba(102,124,255,.13);
+      color: #7b8fff;
+      font-weight: 900;
+    }
+
+    .benefit-item strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .benefit-item span {
+      display: block;
+      color: var(--text-dim, #9ca3b4);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    /* =========================================================
+       CONNECTION STATUS
+       ========================================================= */
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-top: 20px;
+      color: var(--text-dim, #9ca3b4);
+      font-size: 12px;
+    }
+
+    .connection-status i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: block;
+      background: #ef4444;
+      box-shadow: 0 0 0 4px rgba(239,68,68,.10);
+    }
+
+    .connection-status.online i {
+      background: #22c55e;
+      box-shadow: 0 0 0 4px rgba(34,197,94,.10);
+    }
+
+    /* =========================================================
+       LOGIN CARD
+       ========================================================= */
+
+    .proctor-card {
+      width: 100%;
+      max-width: 470px;
+      justify-self: end;
+      padding: 34px;
+      border-radius: 22px;
+      border: 1px solid var(--border-color, rgba(255,255,255,.09));
+      background: var(--bg-panel, rgba(255,255,255,.045));
+      box-shadow: 0 30px 90px rgba(0,0,0,.18);
+    }
+
+    .login-heading h2 {
+      font-size: 30px;
+      margin: 8px 0;
+      letter-spacing: -.8px;
+    }
+
+    .login-heading p {
+      color: var(--text-dim, #9ca3b4);
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 25px;
+    }
+
+    .theme-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 25px;
+    }
+
+    .login-security-note {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-top: 20px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border-color, rgba(255,255,255,.08));
+      color: var(--text-dim, #9ca3b4);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .security-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+      flex: 0 0 auto;
+    }
+
+    .full {
+      width: 100%;
+    }
+
+    /* =========================================================
+       PROFESSIONAL ADMIN DASHBOARD
+       ========================================================= */
+
+    .hero-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 25px;
+      padding: 28px;
+      margin-bottom: 20px;
+      border-radius: 18px;
+      border: 1px solid var(--border-color, rgba(255,255,255,.08));
+      background:
+        linear-gradient(
+          135deg,
+          rgba(98,119,255,.13),
+          rgba(255,255,255,.025)
+        );
+    }
+
+    .hero-banner.compact {
+      padding: 24px;
+    }
+
+    .hero-banner h1 {
+      margin: 5px 0 8px;
+      font-size: clamp(25px, 3vw, 38px);
+      letter-spacing: -1px;
+    }
+
+    .hero-banner p {
+      max-width: 720px;
+      color: var(--text-dim, #9ca3b4);
+      line-height: 1.6;
+      font-size: 13px;
+      margin: 0;
+    }
+
+    .hero-action {
+      flex-shrink: 0;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .panel-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    .panel-heading h3 {
+      margin: 4px 0;
+    }
+
+    .large-number {
+      font-size: 32px;
+      letter-spacing: -1px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .feature-grid > div {
+      padding: 15px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color, rgba(255,255,255,.07));
+      background: rgba(255,255,255,.025);
+    }
+
+    .feature-grid strong {
+      display: block;
+      font-size: 20px;
+      margin-bottom: 4px;
+    }
+
+    .feature-grid span {
+      display: block;
+      color: var(--text-dim, #9ca3b4);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    /* =========================================================
+       ROOM CARDS
+       ========================================================= */
+
+    .room-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .room-card {
+      padding: 22px;
+      border-radius: 18px;
+      border: 1px solid var(--border-color, rgba(255,255,255,.08));
+      background: var(--bg-panel, rgba(255,255,255,.035));
+      transition: .2s ease;
+    }
+
+    .room-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(110,130,255,.35);
+    }
+
+    .room-card-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 15px;
+      align-items: flex-start;
+    }
+
+    .room-label {
+      display: block;
+      color: var(--text-dim, #9ca3b4);
+      font-size: 9px;
+      letter-spacing: .14em;
+      font-weight: 800;
+    }
+
+    .room-number {
+      display: block;
+      font-size: 27px;
+      letter-spacing: -.7px;
+      margin-top: 3px;
+    }
+
+    .room-statuses {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .room-passcode {
+      display: inline-block;
+      margin: 14px 0;
+      padding: 7px 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.04);
+      color: var(--text-dim, #9ca3b4);
+      font-size: 11px;
+    }
+
+    .room-passcode strong {
+      color: var(--text-main, #fff);
+      margin-left: 4px;
+    }
+
+    .room-card h3 {
+      margin: 5px 0 7px;
+    }
+
+    .room-card > p {
+      color: var(--text-dim, #9ca3b4);
+      font-size: 12px;
+      line-height: 1.6;
+      min-height: 40px;
+    }
+
+    .room-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 17px;
+    }
+
+    .room-metrics > div {
+      padding: 11px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.025);
+      border: 1px solid var(--border-color, rgba(255,255,255,.06));
+    }
+
+    .room-metrics span {
+      display: block;
+      color: var(--text-dim, #9ca3b4);
+      font-size: 9px;
+      text-transform: uppercase;
+    }
+
+    .room-metrics strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 13px;
+    }
+
+    .room-card-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    /* =========================================================
+       PARTICIPANT ROOM
+       ========================================================= */
+
+    .room-welcome {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .room-welcome h1 {
+      font-size: 35px;
+      letter-spacing: -1px;
+      margin: 5px 0 8px;
+    }
+
+    .room-welcome p {
+      color: var(--text-dim, #9ca3b4);
+      line-height: 1.6;
+      font-size: 13px;
+      max-width: 700px;
+    }
+
+    .participant-room-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      padding: 25px;
+      border-radius: 18px;
+      margin-bottom: 18px;
+      border: 1px solid rgba(99,120,255,.25);
+      background:
+        linear-gradient(
+          135deg,
+          rgba(99,120,255,.13),
+          rgba(255,255,255,.025)
+        );
+    }
+
+    .participant-room-card strong {
+      display: block;
+      font-size: 40px;
+      letter-spacing: -1px;
+    }
+
+    .participant-room-card p {
+      color: var(--text-dim, #9ca3b4);
+      font-size: 12px;
+      margin: 5px 0 0;
+    }
+
+    .live-counter {
+      text-align: center;
+      min-width: 180px;
+    }
+
+    .live-counter strong {
+      font-size: 38px;
+    }
+
+    .live-counter span {
+      display: block;
+      color: var(--text-dim, #9ca3b4);
+      font-size: 11px;
+    }
+
+    .start-panel {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 25px;
+      margin: 18px 0;
+      border-color: rgba(99,120,255,.2);
+    }
+
+    .start-panel h3 {
+      margin: 4px 0;
+    }
+
+    /* =========================================================
+       MODALS
+       ========================================================= */
+
+    .modal-open {
+      overflow: hidden;
+    }
+
+    .modal-root {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      padding: 25px;
+      background: rgba(0,0,0,.72);
+      backdrop-filter: blur(8px);
+    }
+
+    .modal-root[hidden] {
+      display: none !important;
+    }
+
+    .modal {
+      width: min(900px, 100%);
+      max-height: calc(100vh - 50px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid var(--border-color, rgba(255,255,255,.1));
+      background: var(--bg-main, #11141c);
+      box-shadow: 0 35px 100px rgba(0,0,0,.45);
+    }
+
+    .modal-compact {
+      width: min(600px, 100%);
+    }
+
+    .modal-editor {
+      width: min(950px, 100%);
+    }
+
+    .modal-head {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      padding: 22px 25px;
+      border-bottom: 1px solid var(--border-color, rgba(255,255,255,.08));
+    }
+
+    .modal-head h3 {
+      margin: 4px 0 0;
+    }
+
+    .close-btn {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--text-main, #fff);
+      font-size: 30px;
+      line-height: 1;
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      cursor: pointer !important;
+      position: relative;
+      z-index: 100;
+      flex: 0 0 auto;
+    }
+
+    .close-btn:hover {
+      background: rgba(255,255,255,.08);
+    }
+
+    /*
+      FIX:
+      The editor body itself scrolls.
+      The footer remains visible.
+    */
+
+    .modal-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: calc(100vh - 210px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-right: 5px;
+    }
+
+    .modal-scroll::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .modal-scroll::-webkit-scrollbar-thumb {
+      background: rgba(120,130,160,.4);
+      border-radius: 20px;
+    }
+
+    .modal-body {
+      padding: 25px;
+    }
+
+    .modal-footer {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 17px 25px;
+      border-top: 1px solid var(--border-color, rgba(255,255,255,.08));
+      background: var(--bg-panel, rgba(255,255,255,.025));
+    }
+
+    .editor-notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 13px;
+      padding: 15px;
+      border-radius: 13px;
+      margin-bottom: 20px;
+      background: rgba(99,120,255,.08);
+      border: 1px solid rgba(99,120,255,.2);
+    }
+
+    .editor-notice-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: rgba(99,120,255,.15);
+      color: #8294ff;
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
+    .editor-notice strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .editor-notice span {
+      display: block;
+      color: var(--text-dim, #9ca3b4);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .instruction-list {
+      color: var(--text-dim, #9ca3b4);
+      font-size: 13px;
+      line-height: 1.8;
+      padding-left: 20px;
+    }
+
+    /* =========================================================
+       MOBILE
+       ========================================================= */
+
+    @media (max-width: 950px) {
+
+      .proctor-login {
+        grid-template-columns: 1fr;
+        padding-top: 110px;
+      }
+
+      .proctor-card {
+        justify-self: stretch;
+        max-width: none;
+      }
+
+      .room-grid,
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .room-metrics {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+    }
+
+    @media (max-width: 650px) {
+
+      .login-topbar {
+        padding: 15px;
+      }
+
+      .proctor-login {
+        padding: 90px 18px 30px;
+      }
+
+      .proctor-brand h1 {
+        font-size: 52px;
+      }
+
+      .proctor-card {
+        padding: 24px;
+      }
+
+      .hero-banner,
+      .participant-room-card,
+      .start-panel,
+      .room-welcome {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .live-counter {
+        text-align: left;
+      }
+
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .room-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .room-metrics {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .modal-root {
+        padding: 10px;
+      }
+
+      .modal {
+        max-height: calc(100vh - 20px);
+      }
+
+      .modal-scroll {
+        max-height: calc(100vh - 180px);
+      }
+
+    }
+
+  </style>
+
 </head>
 
 <body>
 
-<div id="app">
+<div id="app" class="app">
 
   <!-- =========================================================
-       LOGIN / LANDING
-  ========================================================== -->
-  <section id="login-view" class="view login-view">
+       TOASTS
+       ========================================================= -->
 
-    <header class="landing-topbar">
-      <div class="brand-inline">
-        <div class="brand-symbol">+</div>
-        <div>
-          <strong>Proctor<span>+</span></strong>
-          <small>EXAMINATION PORTAL</small>
-        </div>
-      </div>
-
-      <div class="landing-actions">
-        <button id="theme-toggle-login" class="icon-btn" type="button">
-          ☼
-        </button>
-
-        <button
-          id="admin-login-open"
-          class="admin-login-btn"
-          type="button">
-          Admin Login
-        </button>
-      </div>
-    </header>
+  <div
+    id="toast-container"
+    class="toast-container"
+  ></div>
 
 
-    <main class="login-layout">
+  <!-- =========================================================
+       ROOM LOGIN
+       ========================================================= -->
+
+  <section
+    id="login-view"
+    class="view active"
+  >
+
+    <div class="login-topbar">
+
+      <button
+        id="admin-login-top"
+        type="button"
+        class="admin-access"
+      >
+        Admin Login →
+      </button>
+
+    </div>
+
+
+    <div class="login-shell proctor-login">
 
       <!-- BRAND / DESCRIPTION -->
-      <section class="login-introduction">
 
-        <div class="intro-badge">
-          <span class="status-dot"></span>
-          SECURE ONLINE EXAMINATION
+      <div class="brand-panel proctor-brand">
+
+        <div class="proctor-logo">
+          <span>+</span>
         </div>
+
+        <span class="eyebrow">
+          SECURE ONLINE EXAMINATION
+        </span>
 
         <h1>
-          Professional examination,
-          <span>simplified.</span>
+          Proctor<span>+</span>
         </h1>
 
-        <p class="intro-description">
-          Proctor+ is a browser-based examination management and
-          proctoring portal designed to provide organizations with a
-          structured, secure, and professional environment for online
-          assessments.
-        </p>
-
-        <p class="intro-description secondary">
-          From room-based examination access and configurable timers
-          to security monitoring and centralized reporting, Proctor+
-          helps administrators manage the complete examination
-          lifecycle from one platform.
+        <p class="proctor-tagline">
+          Proctor+ is a centralized online
+          examination platform designed to make
+          assessments more organized, accessible
+          and easier to monitor. It provides a
+          structured environment for managing
+          examination rooms, participant sessions,
+          timing and browser-based proctoring.
         </p>
 
 
-        <div class="benefit-grid">
+        <div class="proctor-benefits">
 
-          <div class="benefit-card">
-            <div class="benefit-icon">⌁</div>
-            <div>
-              <strong>Room-Based Access</strong>
-              <p>
-                Participants can securely enter an assigned examination
-                using a room number and passcode.
-              </p>
+          <div class="benefit-item">
+
+            <div class="benefit-icon">
+              ⌂
             </div>
+
+            <div>
+
+              <strong>
+                Shared Examination Rooms
+              </strong>
+
+              <span>
+                Multiple computers can enter the
+                same Room Number and Passcode
+                simultaneously, making Proctor+
+                suitable for classroom, training
+                and group certification sessions.
+              </span>
+
+            </div>
+
           </div>
 
-          <div class="benefit-card">
-            <div class="benefit-icon">◷</div>
-            <div>
-              <strong>Controlled Examination</strong>
-              <p>
-                Configure examination duration, availability schedules,
-                and proctoring controls based on operational needs.
-              </p>
+
+          <div class="benefit-item">
+
+            <div class="benefit-icon">
+              ∞
             </div>
+
+            <div>
+
+              <strong>
+                Unlimited Examination Sessions
+              </strong>
+
+              <span>
+                There is no room-wide submission
+                limit. Every participant receives
+                an independent session that can be
+                recorded without affecting other
+                participants.
+              </span>
+
+            </div>
+
           </div>
 
-          <div class="benefit-card">
-            <div class="benefit-icon">✓</div>
-            <div>
-              <strong>Security Monitoring</strong>
-              <p>
-                Detect common tab switching, focus loss, fullscreen
-                exits, and restricted shortcut attempts.
-              </p>
+
+          <div class="benefit-item">
+
+            <div class="benefit-icon">
+              ✓
             </div>
+
+            <div>
+
+              <strong>
+                Structured Proctoring
+              </strong>
+
+              <span>
+                Configurable timers and browser-based
+                monitoring help identify common
+                security events such as focus loss,
+                tab switching and fullscreen exit.
+              </span>
+
+            </div>
+
           </div>
 
-          <div class="benefit-card">
-            <div class="benefit-icon">▤</div>
-            <div>
-              <strong>Centralized Reporting</strong>
-              <p>
-                Review examination sessions, completion status,
-                violations, and room activity from the administrator
-                dashboard.
-              </p>
+
+          <div class="benefit-item">
+
+            <div class="benefit-icon">
+              ▣
             </div>
+
+            <div>
+
+              <strong>
+                Centralized Administration
+              </strong>
+
+              <span>
+                Administrators can manage rooms,
+                examination links, submissions and
+                security events from one centralized
+                control center.
+              </span>
+
+            </div>
+
           </div>
 
         </div>
 
-        <div class="intro-footer">
-          <span>PROCTOR+</span>
-          <span>•</span>
-          <span>Structured</span>
-          <span>•</span>
-          <span>Secure</span>
-          <span>•</span>
-          <span>Scalable</span>
+
+        <div
+          id="connection-status"
+          class="connection-status offline"
+        >
+
+          <i></i>
+
+          <span>
+            Connecting to shared Proctor+
+            examination system…
+          </span>
+
         </div>
 
-      </section>
+      </div>
 
 
       <!-- ROOM LOGIN -->
-      <section class="room-login-card">
 
-        <div class="login-card-top">
-          <span class="eyebrow">ROOM ACCESS</span>
-          <div class="secure-badge">
-            <span class="status-dot"></span>
-            Secure Connection
-          </div>
+      <div class="login-card proctor-card">
+
+        <div class="theme-row">
+
+          <button
+            id="theme-toggle-login"
+            class="icon-btn"
+            type="button"
+            title="Toggle theme"
+          >
+            ☼
+          </button>
+
         </div>
+
 
         <div class="login-heading">
-          <h2>Enter Examination Room</h2>
+
+          <span class="eyebrow">
+            PARTICIPANT ACCESS
+          </span>
+
+          <h2>
+            Enter your examination room
+          </h2>
 
           <p>
-            Enter the room number and passcode provided by your
-            examination administrator.
+            Enter the Room Number and Passcode
+            provided by your examination
+            administrator.
           </p>
+
         </div>
 
-        <form id="login-form" autocomplete="off">
 
-          <div class="field">
-            <label for="login-room">
-              Room Number
-            </label>
+        <form
+          id="room-login-form"
+          novalidate
+        >
 
-            <input
-              id="login-room"
-              name="room"
-              type="text"
-              inputmode="numeric"
-              autocomplete="off"
-              placeholder="e.g. 1001"
-              required>
-          </div>
+          <label for="login-room">
+            Room Number
+          </label>
+
+          <input
+            id="login-room"
+            type="text"
+            autocomplete="off"
+            required
+            placeholder="e.g. HR-2026-01"
+          >
 
 
-          <div class="field">
-            <label for="login-passcode">
-              Passcode
-            </label>
+          <label for="login-passcode">
+            Passcode
+          </label>
 
-            <input
-              id="login-passcode"
-              name="passcode"
-              type="password"
-              autocomplete="off"
-              placeholder="Enter room passcode"
-              required>
-          </div>
+          <input
+            id="login-passcode"
+            type="password"
+            autocomplete="off"
+            required
+            placeholder="Enter room passcode"
+          >
 
 
           <button
+            class="primary-btn full"
             type="submit"
-            class="primary-btn full">
+          >
             Enter Examination Room
             <span>→</span>
           </button>
 
+
           <p
             id="login-error"
-            class="form-error"
+            class="form-error login-warning"
             role="alert"
-            hidden>
-          </p>
+            hidden
+          ></p>
 
         </form>
 
 
-        <div class="login-note">
-          <div class="note-icon">i</div>
+        <div class="login-security-note">
 
-          <div>
-            <strong>Examination Access</strong>
+          <span class="security-dot"></span>
 
-            <p>
-              Each device entering this room receives its own
-              examination session. Multiple participants may access
-              the same room simultaneously.
-            </p>
-          </div>
+          <span>
+            Your participant session is independent
+            from other computers. Multiple
+            participants may use the same room
+            simultaneously.
+          </span>
+
         </div>
 
-      </section>
+      </div>
 
-    </main>
-
-    <footer class="landing-footer">
-      <span>© Proctor+ Examination Portal</span>
-      <span>Browser-based examination management</span>
-    </footer>
+    </div>
 
   </section>
 
 
   <!-- =========================================================
        ADMIN PORTAL
-  ========================================================== -->
-  <section id="admin-view" class="view app-view" hidden>
+       ========================================================= -->
 
-    <aside class="sidebar" id="admin-sidebar">
+  <section
+    id="admin-view"
+    class="view app-view"
+    hidden
+  >
+
+    <aside
+      class="sidebar"
+      id="admin-sidebar"
+    >
 
       <div class="sidebar-brand">
-        <div class="brand-mark">+</div>
+
+        <div class="brand-mark small">
+          +
+        </div>
 
         <div>
-          <strong>Proctor<span>+</span></strong>
-          <small>ADMINISTRATION</small>
+
+          <strong>
+            Proctor+
+          </strong>
+
+          <small>
+            ADMIN CONTROL CENTER
+          </small>
+
         </div>
+
       </div>
 
 
-      <div class="sidebar-section-label">
-        MANAGEMENT
-      </div>
-
-      <nav>
+      <nav id="admin-nav">
 
         <button
           class="nav-item active"
-          data-admin-page="dashboard">
-          <span class="nav-icon">⌂</span>
+          data-admin-page="dashboard"
+        >
+          ⌂
           <span>Dashboard</span>
         </button>
 
         <button
           class="nav-item"
-          data-admin-page="exams">
-          <span class="nav-icon">▣</span>
-          <span>Exam Rooms</span>
+          data-admin-page="exams"
+        >
+          ▣
+          <span>Rooms & Exams</span>
         </button>
 
         <button
           class="nav-item"
-          data-admin-page="submissions">
-          <span class="nav-icon">▤</span>
+          data-admin-page="submissions"
+        >
+          ▤
           <span>Submissions</span>
         </button>
 
         <button
           class="nav-item"
-          data-admin-page="violations">
-          <span class="nav-icon">⚠</span>
-          <span>Security Logs</span>
+          data-admin-page="violations"
+        >
+          ⚠
+          <span>Security Events</span>
         </button>
 
         <button
           class="nav-item"
-          data-admin-page="analytics">
-          <span class="nav-icon">◔</span>
+          data-admin-page="analytics"
+        >
+          ◔
           <span>Analytics</span>
         </button>
 
         <button
           class="nav-item"
-          data-admin-page="settings">
-          <span class="nav-icon">⚙</span>
+          data-admin-page="settings"
+        >
+          ⚙
           <span>Settings</span>
         </button>
 
@@ -300,24 +1163,35 @@
       <div class="sidebar-bottom">
 
         <div class="user-mini">
-          <div class="avatar" id="admin-avatar">A</div>
+
+          <div
+            class="avatar"
+            id="admin-avatar"
+          >
+            A
+          </div>
 
           <div>
+
             <strong id="admin-user-name">
               Administrator
             </strong>
 
             <small id="admin-user-role">
-              Administrator
+              System Administrator
             </small>
+
           </div>
+
         </div>
+
 
         <button
           id="admin-logout"
           class="logout-btn"
-          type="button">
-          ↪ Sign Out
+          type="button"
+        >
+          ↪ Logout
         </button>
 
       </div>
@@ -332,25 +1206,36 @@
         <button
           class="mobile-menu"
           data-toggle-sidebar="admin-sidebar"
-          type="button">
+          type="button"
+        >
           ☰
         </button>
 
-        <div class="topbar-heading">
-          <span class="eyebrow">ADMINISTRATION</span>
+        <div>
+
+          <span class="eyebrow">
+            PROCTOR+ ADMINISTRATION
+          </span>
+
           <h2 id="admin-page-title">
             Dashboard
           </h2>
+
         </div>
+
 
         <div class="top-actions">
 
-          <div class="clock" id="admin-clock"></div>
+          <span
+            id="admin-clock"
+            class="clock"
+          ></span>
 
           <button
             id="theme-toggle-admin"
             class="icon-btn"
-            type="button">
+            type="button"
+          >
             ☼
           </button>
 
@@ -363,33 +1248,33 @@
 
         <div
           id="admin-dashboard-page"
-          class="admin-page active">
-        </div>
+          class="admin-page active"
+        ></div>
 
         <div
           id="admin-exams-page"
-          class="admin-page">
-        </div>
+          class="admin-page"
+        ></div>
 
         <div
           id="admin-submissions-page"
-          class="admin-page">
-        </div>
+          class="admin-page"
+        ></div>
 
         <div
           id="admin-violations-page"
-          class="admin-page">
-        </div>
+          class="admin-page"
+        ></div>
 
         <div
           id="admin-analytics-page"
-          class="admin-page">
-        </div>
+          class="admin-page"
+        ></div>
 
         <div
           id="admin-settings-page"
-          class="admin-page">
-        </div>
+          class="admin-page"
+        ></div>
 
       </div>
 
@@ -399,35 +1284,37 @@
 
 
   <!-- =========================================================
-       ROOM / PARTICIPANT DASHBOARD
-  ========================================================== -->
-  <section id="examiner-view" class="view app-view" hidden>
+       PARTICIPANT ROOM DASHBOARD
+       ========================================================= -->
 
-    <aside class="sidebar" id="examiner-sidebar">
+  <section
+    id="examiner-view"
+    class="view app-view"
+    hidden
+  >
+
+    <aside
+      class="sidebar"
+      id="examiner-sidebar"
+    >
 
       <div class="sidebar-brand">
-        <div class="brand-mark">+</div>
+
+        <div class="brand-mark small">
+          +
+        </div>
 
         <div>
-          <strong>Proctor<span>+</span></strong>
-          <small>EXAMINATION ROOM</small>
+
+          <strong>
+            Proctor+
+          </strong>
+
+          <small>
+            EXAMINATION ROOM
+          </small>
+
         </div>
-      </div>
-
-
-      <div class="room-sidebar-card">
-
-        <span class="sidebar-mini-label">
-          CURRENT ROOM
-        </span>
-
-        <strong id="participant-room">
-          —
-        </strong>
-
-        <span id="participant-room-status">
-          Connected
-        </span>
 
       </div>
 
@@ -436,8 +1323,9 @@
 
         <button
           class="nav-item active"
-          data-examiner-page="dashboard">
-          <span class="nav-icon">⌂</span>
+          type="button"
+        >
+          ⌂
           <span>Room Dashboard</span>
         </button>
 
@@ -448,18 +1336,23 @@
 
         <div class="user-mini">
 
-          <div class="avatar" id="examiner-avatar">
-            P
+          <div
+            class="avatar"
+            id="examiner-avatar"
+          >
+            R
           </div>
 
           <div>
+
             <strong id="examiner-user-name">
-              Participant
+              Room
             </strong>
 
-            <small>
-              Examination Participant
+            <small id="examiner-user-role">
+              Participant Access
             </small>
+
           </div>
 
         </div>
@@ -468,8 +1361,9 @@
         <button
           id="examiner-logout"
           class="logout-btn"
-          type="button">
-          ↪ Exit Room
+          type="button"
+        >
+          ↪ Logout
         </button>
 
       </div>
@@ -484,26 +1378,36 @@
         <button
           class="mobile-menu"
           data-toggle-sidebar="examiner-sidebar"
-          type="button">
+          type="button"
+        >
           ☰
         </button>
 
-        <div class="topbar-heading">
-          <span class="eyebrow">EXAMINATION ROOM</span>
-          <h2>Available Examination</h2>
+        <div>
+
+          <span class="eyebrow">
+            EXAMINATION ROOM
+          </span>
+
+          <h2>
+            Room Dashboard
+          </h2>
+
         </div>
+
 
         <div class="top-actions">
 
-          <div
+          <span
+            id="examiner-clock"
             class="clock"
-            id="examiner-clock">
-          </div>
+          ></span>
 
           <button
             id="theme-toggle-examiner"
             class="icon-btn"
-            type="button">
+            type="button"
+          >
             ☼
           </button>
 
@@ -516,8 +1420,8 @@
 
         <div
           id="examiner-dashboard-page"
-          class="admin-page active">
-        </div>
+          class="admin-page active"
+        ></div>
 
       </div>
 
@@ -527,29 +1431,30 @@
 
 
   <!-- =========================================================
-       LIVE EXAM
-  ========================================================== -->
-  <section id="exam-view" class="view exam-view" hidden>
+       LIVE EXAMINATION
+       ========================================================= -->
+
+  <section
+    id="exam-view"
+    class="view exam-view"
+    hidden
+  >
 
     <header class="exam-header">
 
       <div class="exam-title">
 
-        <div class="exam-brand">
-          <div class="brand-mark small">+</div>
+        <span class="eyebrow">
+          LIVE EXAMINATION
+        </span>
 
-          <div>
-            <span class="eyebrow">LIVE EXAMINATION</span>
+        <strong id="live-exam-title">
+          Examination
+        </strong>
 
-            <strong id="live-exam-title">
-              Examination
-            </strong>
-
-            <small id="live-exam-examiner">
-              Room —
-            </small>
-          </div>
-        </div>
+        <small id="live-exam-examiner">
+          Room
+        </small>
 
       </div>
 
@@ -557,25 +1462,37 @@
       <div class="exam-metrics">
 
         <div class="metric">
-          <span>TIME REMAINING</span>
+
+          <span>
+            TIME
+          </span>
+
           <strong id="exam-timer">
             --:--
           </strong>
+
         </div>
 
 
         <div class="metric">
-          <span>SECURITY EVENTS</span>
+
+          <span>
+            VIOLATIONS
+          </span>
+
           <strong id="exam-violations">
             0 / 3
           </strong>
+
         </div>
 
 
         <button
-          id="refresh-form-btn"
-          class="exam-control-btn"
-          type="button">
+          id="exam-refresh-btn"
+          class="secondary-btn"
+          data-action="refresh-form"
+          type="button"
+        >
           ↻ Refresh Form
         </button>
 
@@ -583,7 +1500,8 @@
         <button
           id="exam-submit-btn"
           class="submit-btn"
-          type="button">
+          type="button"
+        >
           Submit Exam
         </button>
 
@@ -594,11 +1512,14 @@
 
     <div
       id="exam-progress-wrap"
-      class="exam-progress-wrap">
+      class="exam-progress-wrap"
+    >
+
       <div
         id="exam-progress"
-        class="exam-progress">
-      </div>
+        class="exam-progress"
+      ></div>
+
     </div>
 
 
@@ -606,40 +1527,16 @@
 
       <div
         id="exam-instructions"
-        class="exam-notice">
-      </div>
+        class="exam-notice"
+      ></div>
 
 
-      <div class="form-frame-wrap">
-
-        <div class="form-frame-toolbar">
-
-          <div>
-            <strong>Examination Form</strong>
-
-            <span>
-              Complete the Google Form below.
-            </span>
-          </div>
-
-          <button
-            id="refresh-form-btn-secondary"
-            class="secondary-btn"
-            type="button">
-            ↻ Reload
-          </button>
-
-        </div>
-
-
-        <iframe
-          id="exam-iframe"
-          title="Google Form Examination"
-          referrerpolicy="no-referrer"
-          loading="eager">
-        </iframe>
-
-      </div>
+      <iframe
+        id="exam-iframe"
+        title="Google Form Examination"
+        referrerpolicy="no-referrer"
+        loading="eager"
+      ></iframe>
 
     </main>
 
@@ -647,126 +1544,25 @@
 
 
   <!-- =========================================================
-       GENERIC MODAL
-  ========================================================== -->
+       MODAL
+       ========================================================= -->
+
   <div
     id="modal-root"
     class="modal-root"
-    hidden>
-  </div>
-
-
-  <!-- =========================================================
-       ADMIN LOGIN MODAL
-  ========================================================== -->
-  <div
-    id="admin-login-modal"
-    class="modal-root"
-    hidden>
-
-    <div
-      class="modal modal-small"
-      role="dialog"
-      aria-modal="true">
-
-      <div class="modal-head">
-
-        <div>
-          <span class="eyebrow">
-            ADMINISTRATION
-          </span>
-
-          <h3>
-            Administrator Login
-          </h3>
-        </div>
-
-        <button
-          class="close-btn"
-          type="button"
-          data-action="close-admin-login"
-          aria-label="Close">
-          ×
-        </button>
-
-      </div>
-
-
-      <form
-        id="admin-login-form"
-        class="modal-form"
-        autocomplete="off">
-
-        <div class="modal-body">
-
-          <div class="field">
-            <label for="admin-username">
-              Username
-            </label>
-
-            <input
-              id="admin-username"
-              type="text"
-              autocomplete="off"
-              placeholder="Administrator username"
-              required>
-          </div>
-
-
-          <div class="field">
-            <label for="admin-password">
-              Password
-            </label>
-
-            <input
-              id="admin-password"
-              type="password"
-              autocomplete="off"
-              placeholder="Administrator password"
-              required>
-          </div>
-
-
-          <p
-            id="admin-login-error"
-            class="form-error"
-            hidden>
-          </p>
-
-        </div>
-
-
-        <div class="modal-footer">
-
-          <button
-            type="button"
-            class="secondary-btn"
-            data-action="close-admin-login">
-            Cancel
-          </button>
-
-          <button
-            type="submit"
-            class="primary-btn">
-            Sign In
-          </button>
-
-        </div>
-
-      </form>
-
-    </div>
-
-  </div>
+    hidden
+  ></div>
 
 
   <!-- =========================================================
        VIOLATION OVERLAY
-  ========================================================== -->
+       ========================================================= -->
+
   <div
     id="violation-overlay"
     class="overlay"
-    hidden>
+    hidden
+  >
 
     <div class="overlay-card danger-card">
 
@@ -779,7 +1575,7 @@
       </span>
 
       <h2>
-        Examination Interruption Detected
+        Violation Detected
       </h2>
 
       <p id="violation-reason">
@@ -788,26 +1584,33 @@
 
 
       <div class="violation-big">
-        <strong id="overlay-count">1</strong>
+
+        <strong id="overlay-count">
+          1
+        </strong>
 
         <span>
           of
-          <b id="overlay-max">3</b>
-          allowed security events
+          <b id="overlay-max">
+            3
+          </b>
+          allowed violations
         </span>
+
       </div>
 
 
       <p class="muted">
-        Return to the examination environment and re-lock the
-        examination screen to continue.
+        Return to the examination and
+        re-lock the screen to continue.
       </p>
 
 
       <button
         id="resume-exam-btn"
         class="primary-btn full"
-        type="button">
+        type="button"
+      >
         Resume &amp; Re-lock Screen
       </button>
 
@@ -818,28 +1621,32 @@
 
   <!-- =========================================================
        RESULT
-  ========================================================== -->
+       ========================================================= -->
+
   <section
     id="result-view"
     class="view result-view"
-    hidden>
+    hidden
+  >
 
     <div class="result-card">
 
       <div
         id="result-icon"
-        class="result-icon">
+        class="result-icon"
+      >
         ✓
       </div>
 
       <span
         id="result-eyebrow"
-        class="eyebrow">
+        class="eyebrow"
+      >
         EXAM COMPLETE
       </span>
 
       <h1 id="result-title">
-        Examination Submitted
+        Thank you for taking the exam!
       </h1>
 
       <p id="result-message">
@@ -850,23 +1657,46 @@
       <div class="result-details">
 
         <div>
-          <span>Room</span>
-          <strong id="result-room">—</strong>
+          <span>
+            Examination
+          </span>
+
+          <strong id="result-exam">
+            —
+          </strong>
         </div>
 
-        <div>
-          <span>Exam</span>
-          <strong id="result-exam">—</strong>
-        </div>
 
         <div>
-          <span>Security Events</span>
-          <strong id="result-violations">0</strong>
+          <span>
+            Room
+          </span>
+
+          <strong id="result-user">
+            —
+          </strong>
         </div>
 
+
         <div>
-          <span>Ended</span>
-          <strong id="result-ended">—</strong>
+          <span>
+            Violations
+          </span>
+
+          <strong id="result-violations">
+            0
+          </strong>
+        </div>
+
+
+        <div>
+          <span>
+            Ended
+          </span>
+
+          <strong id="result-ended">
+            —
+          </strong>
         </div>
 
       </div>
@@ -875,7 +1705,8 @@
       <button
         id="result-dashboard-btn"
         class="primary-btn full"
-        type="button">
+        type="button"
+      >
         Return to Room Dashboard
       </button>
 
@@ -883,13 +1714,23 @@
 
   </section>
 
-
-  <div
-    id="toast-container"
-    class="toast-container">
-  </div>
-
 </div>
+
+
+<!-- =========================================================
+     FIREBASE
+     ========================================================= -->
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+
+
+<!-- =========================================================
+     PROCTOR+
+     ========================================================= -->
 
 <script src="app.js"></script>
 
