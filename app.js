@@ -1,3133 +1,3875 @@
-/* =========================================================
-   PROCTOR+ ONLINE EXAMINATION PORTAL
-   Room-Based Examination System
-   =========================================================
-
-   IMPORTANT:
-   This is a browser/localStorage prototype.
-
-   Authentication, room credentials, attempts and violation
-   records are stored in localStorage and are NOT secure enough
-   for production use.
-
-   A production version should use:
-   - Server-side authentication
-   - Database
-   - Server-side room/session management
-   - Server-side attempt records
-   - Server-side violation logging
-
-   Google Forms are cross-origin. The portal cannot directly
-   detect the actual Google Forms "Submit" event.
-
-   The portal's "Submit Exam" button is therefore the official
-   session completion signal.
-*/
+/*
+ * ================================================================
+ * PROCTOR+
+ * Browser-Based Examination & Proctoring Portal
+ *
+ * IMPORTANT:
+ * This is a frontend/localStorage prototype.
+ * Production deployment should move authentication, room data,
+ * examination sessions and security logs to a backend/database.
+ * ================================================================
+ */
 
 (() => {
-'use strict';
+  'use strict';
 
-/* =========================================================
-   STORAGE
-   ========================================================= */
+  /* ================================================================
+     CONFIGURATION
+  ================================================================ */
 
-const KEY = 'proctor_plus_room_portal_v3';
-const SESSION = 'proctor_plus_session_v3';
+  const DB_KEY = 'proctor_plus_portal_v4';
+  const SESSION_KEY = 'proctor_plus_session_v4';
 
-const DEFAULT_FORM =
-  'https://docs.google.com/forms/d/e/1FAIpQLSf_PLACEHOLDER_FORM_ID/viewform?embedded=true';
+  const DEFAULT_FORM =
+    'https://docs.google.com/forms/d/e/1FAIpQLSf_PLACEHOLDER_FORM_ID/viewform?embedded=true';
 
-/* =========================================================
-   SEED DATA
-   ========================================================= */
+  const MAX_EXAMS = 6;
 
-const seed = {
-  users: [
-    {
-      id: 'u-admin',
-      username: 'admin',
-      password: '123admin',
-      role: 'admin',
-      name: 'Administrator'
+  const ADMIN_USERNAME = 'admin';
+  const ADMIN_PASSWORD = '123admin';
+
+  const DEFAULT_ROOM = {
+    id: 'room-demo',
+    roomNumber: '1001',
+    passcode: '123456',
+    title: 'Demo Examination',
+    description:
+      'This is a demonstration examination room. Replace the Google Form link with your official examination form.',
+    formUrl: DEFAULT_FORM,
+    antiCheat: true,
+    maxViolations: 3,
+    timerEnabled: true,
+    durationMinutes: 60,
+    startAt: '',
+    endAt: '',
+    active: true,
+    createdAt: Date.now(),
+    createdBy: 'u-admin'
+  };
+
+
+  /* ================================================================
+     STATE
+  ================================================================ */
+
+  let db = loadDB();
+  let session = loadSession();
+
+  let currentRoom = null;
+  let currentAttempt = null;
+
+  let timer = null;
+  let examState = null;
+
+  let violationOverlayOpen = false;
+  let graceUntil = 0;
+  let lastViolation = 0;
+
+  const VIOLATION_DEBOUNCE = 650;
+  const FULLSCREEN_GRACE = 1500;
+
+
+  /* ================================================================
+     DOM HELPERS
+  ================================================================ */
+
+  const $ = selector => document.querySelector(selector);
+
+  const $$ = selector =>
+    [...document.querySelectorAll(selector)];
+
+
+  /* ================================================================
+     VIEW ELEMENTS
+  ================================================================ */
+
+  const views = {
+    login: $('#login-view'),
+    admin: $('#admin-view'),
+    examiner: $('#examiner-view'),
+    exam: $('#exam-view'),
+    result: $('#result-view')
+  };
+
+
+  /* ================================================================
+     UTILITIES
+  ================================================================ */
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+
+  function uid(prefix = 'id') {
+    return (
+      prefix +
+      '-' +
+      Date.now().toString(36) +
+      '-' +
+      Math.random().toString(36).slice(2, 8)
+    );
+  }
+
+
+  function esc(value = '') {
+    return String(value).replace(
+      /[&<>'"]/g,
+      char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+      })[char]
+    );
+  }
+
+
+  function fmtDate(timestamp) {
+    if (!timestamp) return '—';
+
+    return new Date(timestamp).toLocaleString([], {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+
+  function fmtTime(timestamp) {
+    if (!timestamp) return '—';
+
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+
+  function boolSetting(value, fallback = false) {
+    if (
+      value === true ||
+      value === 1 ||
+      value === '1' ||
+      value === 'true' ||
+      value === 'on' ||
+      value === 'yes'
+    ) {
+      return true;
     }
-  ],
 
-  rooms: [
-    {
-      id: 'room-demo',
-      roomNumber: 'ROOM-001',
-      passcode: '123456',
-      title: 'Demo Examination',
-      description:
-        'Replace this Google Form with your actual examination link.',
-      formUrl: DEFAULT_FORM,
-      antiCheat: true,
-      maxViolations: 3,
-      timerEnabled: true,
-      durationMinutes: 60,
-      startAt: '',
-      endAt: '',
-      active: true,
-      createdAt: Date.now(),
-      createdBy: 'u-admin'
+    if (
+      value === false ||
+      value === 0 ||
+      value === '0' ||
+      value === 'false' ||
+      value === 'off' ||
+      value === 'no' ||
+      value === '' ||
+      value == null
+    ) {
+      return false;
     }
-  ],
 
-  attempts: [],
-
-  violations: [],
-
-  theme: 'dark'
-};
-
-/* =========================================================
-   STATE
-   ========================================================= */
-
-let db = loadDB();
-let session = loadSession();
-
-let currentRoom = null;
-let examState = null;
-let timer = null;
-
-let violationOverlayOpen = false;
-let graceUntil = 0;
-let lastViolation = 0;
-
-const DEBOUNCE = 650;
-const GRACE = 1500;
-
-/* =========================================================
-   HELPERS
-   ========================================================= */
-
-const $ = selector =>
-  document.querySelector(selector);
-
-const $$ = selector =>
-  [...document.querySelectorAll(selector)];
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function safeGet(storage, key) {
-  try {
-    return storage.getItem(key);
-  } catch (error) {
-    console.warn('Storage read failed:', error);
-    return null;
+    return fallback;
   }
-}
 
-function safeSet(storage, key, value) {
-  try {
-    storage.setItem(key, value);
-    return true;
-  } catch (error) {
-    console.warn('Storage write failed:', error);
-    return false;
+
+  /* ================================================================
+     STORAGE
+  ================================================================ */
+
+  function safeGet(storage, key) {
+    try {
+      return storage.getItem(key);
+    } catch (error) {
+      console.warn('Storage read failed:', error);
+      return null;
+    }
   }
-}
 
-function safeRemove(storage, key) {
-  try {
-    storage.removeItem(key);
-  } catch (error) {
-    console.warn('Storage remove failed:', error);
+
+  function safeSet(storage, key, value) {
+    try {
+      storage.setItem(key, value);
+      return true;
+    } catch (error) {
+      console.warn('Storage write failed:', error);
+      return false;
+    }
   }
-}
 
-function uid(prefix = 'id') {
-  return (
-    prefix +
-    '-' +
-    Date.now().toString(36) +
-    '-' +
-    Math.random().toString(36).slice(2, 8)
-  );
-}
 
-function esc(value = '') {
-  return String(value).replace(
-    /[&<>'"]/g,
-    character => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      "'": '&#39;',
-      '"': '&quot;'
-    }[character])
-  );
-}
+  function safeRemove(storage, key) {
+    try {
+      storage.removeItem(key);
+    } catch (error) {
+      console.warn('Storage remove failed:', error);
+    }
+  }
 
-function fmtDate(timestamp) {
-  if (!timestamp) return '—';
 
-  return new Date(timestamp).toLocaleString([], {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
+  function saveDB() {
+    safeSet(localStorage, DB_KEY, JSON.stringify(db));
+  }
 
-function fmtTime(timestamp) {
-  if (!timestamp) return '—';
 
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
+  function loadSession() {
+    try {
+      return JSON.parse(
+        safeGet(sessionStorage, SESSION_KEY) || 'null'
+      );
+    } catch {
+      return null;
+    }
+  }
 
-/* =========================================================
-   DATABASE
-   ========================================================= */
 
-function loadDB() {
-  let stored = {};
+  function saveSession() {
+    if (session) {
+      safeSet(
+        sessionStorage,
+        SESSION_KEY,
+        JSON.stringify(session)
+      );
+    } else {
+      safeRemove(sessionStorage, SESSION_KEY);
+    }
+  }
 
-  try {
-    const raw = safeGet(localStorage, KEY);
 
-    if (raw) {
-      try {
+  /* ================================================================
+     DATABASE MIGRATION
+  ================================================================ */
+
+  function loadDB() {
+    let stored = {};
+
+    try {
+      const raw = safeGet(localStorage, DB_KEY);
+
+      if (raw) {
         stored = JSON.parse(raw) || {};
-      } catch {
-        stored = {};
       }
+    } catch {
+      stored = {};
     }
-  } catch {
-    stored = {};
-  }
 
-  const users =
-    Array.isArray(stored.users)
-      ? stored.users
+
+    let rooms = Array.isArray(stored.rooms)
+      ? stored.rooms
       : [];
 
-  /* Always maintain the admin account */
 
-  const admin = users.find(
-    user =>
-      String(user.username || '')
-        .trim()
-        .toLowerCase() === 'admin'
-  );
-
-  if (!admin) {
-    users.push(clone(seed.users[0]));
-  } else {
-    admin.username = 'admin';
-    admin.password = '123admin';
-    admin.role = 'admin';
-    admin.name = 'Administrator';
-  }
-
-  const repaired = {
-    ...clone(seed),
-    ...stored,
-
-    users,
-
-    rooms:
-      Array.isArray(stored.rooms) && stored.rooms.length
-        ? stored.rooms
-        : clone(seed.rooms),
-
-    attempts:
-      Array.isArray(stored.attempts)
-        ? stored.attempts
-        : [],
-
-    violations:
-      Array.isArray(stored.violations)
-        ? stored.violations
-        : [],
-
-    theme:
-      stored.theme === 'light'
-        ? 'light'
-        : 'dark'
-  };
-
-  if (
-    !Array.isArray(repaired.rooms) ||
-    !repaired.rooms.length
-  ) {
-    repaired.rooms = clone(seed.rooms);
-  }
-
-  safeSet(
-    localStorage,
-    KEY,
-    JSON.stringify(repaired)
-  );
-
-  return repaired;
-}
-
-function saveDB() {
-  safeSet(
-    localStorage,
-    KEY,
-    JSON.stringify(db)
-  );
-}
-
-/* =========================================================
-   SESSION
-   ========================================================= */
-
-function loadSession() {
-  try {
-    return JSON.parse(
-      safeGet(sessionStorage, SESSION) || 'null'
-    );
-  } catch {
-    return null;
-  }
-}
-
-function saveSession() {
-  if (session) {
-    safeSet(
-      sessionStorage,
-      SESSION,
-      JSON.stringify(session)
-    );
-  } else {
-    safeRemove(
-      sessionStorage,
-      SESSION
-    );
-  }
-}
-
-function currentUser() {
-  if (!session) return null;
-
-  return (
-    db.users.find(
-      user => user.id === session.userId
-    ) ||
-    db.users.find(
-      user =>
-        String(user.username || '')
-          .toLowerCase() ===
-        String(session.username || '')
-          .toLowerCase()
-    ) ||
-    null
-  );
-}
-
-/* =========================================================
-   VIEWS
-   ========================================================= */
-
-const views = {
-  login: $('#login-view'),
-  admin: $('#admin-view'),
-  room: $('#room-view'),
-  exam: $('#exam-view'),
-  result: $('#result-view')
-};
-
-function showView(name) {
-  Object.values(views).forEach(view => {
-    if (view) {
-      view.hidden = true;
-    }
-  });
-
-  if (views[name]) {
-    views[name].hidden = false;
-  }
-
-  window.scrollTo(0, 0);
-}
-
-/* =========================================================
-   TOAST
-   ========================================================= */
-
-function toast(message, type = '') {
-  const container =
-    $('#toast-container');
-
-  if (!container) return;
-
-  const element =
-    document.createElement('div');
-
-  element.className =
-    'toast ' + type;
-
-  element.textContent = message;
-
-  container.appendChild(element);
-
-  setTimeout(() => {
-    element.remove();
-  }, 3500);
-}
-
-/* =========================================================
-   THEME
-   ========================================================= */
-
-function applyTheme() {
-  const light =
-    db.theme === 'light';
-
-  document.documentElement.dataset.theme =
-    light ? 'light' : 'dark';
-
-  document.body.classList.toggle(
-    'light',
-    light
-  );
-
-  document.body.classList.toggle(
-    'dark',
-    !light
-  );
-
-  [
-    'theme-toggle-login',
-    'theme-toggle-admin',
-    'theme-toggle-room'
-  ].forEach(id => {
-    const button = $('#' + id);
-
-    if (!button) return;
-
-    button.textContent =
-      light ? '☾' : '☼';
-
-    button.setAttribute(
-      'aria-label',
-      light
-        ? 'Switch to dark mode'
-        : 'Switch to light mode'
-    );
-
-    button.title =
-      light
-        ? 'Switch to dark mode'
-        : 'Switch to light mode';
-  });
-}
-
-function toggleTheme() {
-  db.theme =
-    db.theme === 'light'
-      ? 'dark'
-      : 'light';
-
-  saveDB();
-  applyTheme();
-}
-
-/* =========================================================
-   LOGIN
-   ========================================================= */
-
-function showLoginError(message) {
-  const error =
-    $('#login-error');
-
-  if (!error) return;
-
-  error.textContent = message;
-  error.hidden = false;
-  error.style.display = 'block';
-}
-
-function clearLoginError() {
-  const error =
-    $('#login-error');
-
-  if (!error) return;
-
-  error.textContent = '';
-  error.hidden = true;
-  error.style.display = 'none';
-}
-
-/* =========================================================
-   ADMIN LOGIN
-   ========================================================= */
-
-function openAdminLogin() {
-  const modal =
-    $('#admin-login-modal');
-
-  if (!modal) return;
-
-  modal.hidden = false;
-
-  $('#admin-username')?.focus();
-}
-
-function closeAdminLogin() {
-  const modal =
-    $('#admin-login-modal');
-
-  if (!modal) return;
-
-  modal.hidden = true;
-
-  $('#admin-login-form')?.reset();
-
-  const error =
-    $('#admin-login-error');
-
-  if (error) {
-    error.textContent = '';
-    error.hidden = true;
-  }
-}
-
-function handleAdminLogin(event) {
-  event.preventDefault();
-
-  const username =
-    String(
-      $('#admin-username')?.value || ''
-    ).trim();
-
-  const password =
-    String(
-      $('#admin-password')?.value || ''
-    );
-
-  const error =
-    $('#admin-login-error');
-
-  if (!username || !password) {
-    if (error) {
-      error.textContent =
-        'Please enter your username and password.';
-      error.hidden = false;
-    }
-
-    return;
-  }
-
-  db = loadDB();
-
-  const user =
-    db.users.find(
-      item =>
-        String(item.username || '')
-          .trim()
-          .toLowerCase() ===
-          username.toLowerCase() &&
-        String(item.password || '') ===
-          password &&
-        item.role === 'admin'
-    );
-
-  if (!user) {
-    if (error) {
-      error.textContent =
-        'Incorrect administrator username or password.';
-      error.hidden = false;
-    }
-
-    $('#admin-password').value = '';
-
-    return;
-  }
-
-  session = {
-    userId: user.id,
-    username: user.username,
-    role: 'admin',
-    loginAt: Date.now()
-  };
-
-  saveSession();
-
-  closeAdminLogin();
-
-  openPortal();
-}
-
-/* =========================================================
-   ROOM LOGIN
-   ========================================================= */
-
-function handleRoomLogin(event) {
-  event.preventDefault();
-
-  clearLoginError();
-
-  const roomNumber =
-    String(
-      $('#login-room')?.value || ''
-    ).trim();
-
-  const passcode =
-    String(
-      $('#login-passcode')?.value || ''
-    ).trim();
-
-  if (!roomNumber || !passcode) {
-    showLoginError(
-      'Please enter the Room Number and Passcode.'
-    );
-
-    return;
-  }
-
-  db = loadDB();
-
-  const room =
-    db.rooms.find(
-      item =>
-        String(item.roomNumber || '')
-          .trim()
-          .toLowerCase() ===
-          roomNumber.toLowerCase() &&
-        String(item.passcode || '') ===
-          passcode
-    );
-
-  if (!room) {
-    showLoginError(
-      'Invalid Room Number or Passcode.'
-    );
-
-    $('#login-passcode').value = '';
-
-    return;
-  }
-
-  if (room.active === false) {
-    showLoginError(
-      'This examination room is currently disabled.'
-    );
-
-    return;
-  }
-
-  const availability =
-    getAvailability(room);
-
-  if (availability.status !== 'Available') {
-    showLoginError(
-      'This examination room is not currently available.'
-    );
-
-    return;
-  }
-
-  /*
-    Every browser/PC gets its own unique session ID.
-
-    This is important because multiple users can enter the
-    same room simultaneously.
-  */
-
-  session = {
-    userId: null,
-    username: 'Room Participant',
-    role: 'participant',
-
-    roomId: room.id,
-    roomNumber: room.roomNumber,
-
-    participantId: uid('participant'),
-
-    loginAt: Date.now()
-  };
-
-  saveSession();
-
-  currentRoom = clone(room);
-
-  openRoomDashboard();
-}
-
-/* =========================================================
-   AUTH INITIALIZATION
-   ========================================================= */
-
-function initAuthentication() {
-  const roomForm =
-    $('#room-login-form');
-
-  if (
-    roomForm &&
-    roomForm.dataset.bound !== '1'
-  ) {
-    roomForm.addEventListener(
-      'submit',
-      handleRoomLogin
-    );
-
-    roomForm.dataset.bound = '1';
-  }
-
-  const adminForm =
-    $('#admin-login-form');
-
-  if (
-    adminForm &&
-    adminForm.dataset.bound !== '1'
-  ) {
-    adminForm.addEventListener(
-      'submit',
-      handleAdminLogin
-    );
-
-    adminForm.dataset.bound = '1';
-  }
-
-  $('#admin-login-open')
-    ?.addEventListener(
-      'click',
-      openAdminLogin
-    );
-
-  $('#admin-login-close')
-    ?.addEventListener(
-      'click',
-      closeAdminLogin
-    );
-
-  $('#admin-login-cancel')
-    ?.addEventListener(
-      'click',
-      closeAdminLogin
-    );
-}
-
-/* =========================================================
-   PORTAL ROUTING
-   ========================================================= */
-
-function openPortal() {
-  const user =
-    currentUser();
-
-  if (
-    user &&
-    user.role === 'admin'
-  ) {
-    openAdmin();
-    return;
-  }
-
-  if (
-    session &&
-    session.role === 'participant' &&
-    session.roomId
-  ) {
-    const room =
-      db.rooms.find(
-        item =>
-          item.id === session.roomId
-      );
-
-    if (!room) {
-      logout();
-      return;
-    }
-
-    currentRoom = clone(room);
-
-    openRoomDashboard();
-    return;
-  }
-
-  session = null;
-  saveSession();
-
-  showView('login');
-}
-
-function logout() {
-  clearInterval(timer);
-
-  timer = null;
-
-  currentRoom = null;
-  examState = null;
-
-  violationOverlayOpen = false;
-
-  exitFullscreen();
-
-  document.body.classList.remove(
-    'lockdown-active'
-  );
-
-  $('#exam-view')
-    ?.classList.remove(
-      'lockdown-active'
-    );
-
-  session = null;
-
-  saveSession();
-
-  syncViolationOverlay();
-
-  showView('login');
-
-  $('#room-login-form')
-    ?.reset();
-
-  clearLoginError();
-}
-
-/* =========================================================
-   AVAILABILITY
-   ========================================================= */
-
-function getAvailability(room) {
-  if (!room || room.active === false) {
-    return {
-      status: 'Unavailable'
-    };
-  }
-
-  const now = Date.now();
-
-  const start =
-    room.startAt
-      ? new Date(room.startAt).getTime()
-      : null;
-
-  const end =
-    room.endAt
-      ? new Date(room.endAt).getTime()
-      : null;
-
-  if (
-    Number.isFinite(start) &&
-    now < start
-  ) {
-    return {
-      status: 'Unavailable'
-    };
-  }
-
-  if (
-    Number.isFinite(end) &&
-    now > end
-  ) {
-    return {
-      status: 'Unavailable'
-    };
-  }
-
-  return {
-    status: 'Available'
-  };
-}
-
-/* =========================================================
-   ADMIN SIDEBAR
-   ========================================================= */
-
-const pageTitles = {
-  dashboard: 'Dashboard',
-  rooms: 'Exam Rooms',
-  submissions: 'Submissions',
-  violations: 'Violation Logs',
-  analytics: 'Analytics',
-  settings: 'Settings'
-};
-
-function openAdmin() {
-  const user =
-    currentUser();
-
-  if (!user) {
-    showView('login');
-    return;
-  }
-
-  $('#admin-user-name').textContent =
-    user.name || user.username;
-
-  $('#admin-user-role').textContent =
-    'Administrator';
-
-  $('#admin-avatar').textContent =
-    (
-      user.name ||
-      user.username ||
-      'A'
-    )[0].toUpperCase();
-
-  showView('admin');
-
-  adminPage('dashboard');
-}
-
-function adminPage(page) {
-  page =
-    pageTitles[page]
-      ? page
-      : 'dashboard';
-
-  $$('[data-admin-page]')
-    .forEach(button => {
-      button.classList.toggle(
-        'active',
-        button.dataset.adminPage === page
-      );
-    });
-
-  $$('.admin-page')
-    .forEach(element => {
-      element.classList.remove(
-        'active'
-      );
-    });
-
-  const target =
-    $('#admin-' + page + '-page');
-
-  if (target) {
-    target.classList.add('active');
-  }
-
-  const title =
-    $('#admin-page-title');
-
-  if (title) {
-    title.textContent =
-      pageTitles[page];
-  }
-
-  $('#admin-sidebar')
-    ?.classList.remove('open');
-
-  renderAdminPage(page);
-}
-
-function renderAdminPage(page) {
-  const renderers = {
-    dashboard: renderAdminDashboard,
-    rooms: renderAdminRooms,
-    submissions: renderSubmissions,
-    violations: renderViolations,
-    analytics: renderAnalytics,
-    settings: renderSettings
-  };
-
-  (
-    renderers[page] ||
-    renderAdminDashboard
-  )();
-}
-
-/* =========================================================
-   ADMIN DASHBOARD
-   ========================================================= */
-
-function attemptCounts() {
-  const attempts =
-    db.attempts;
-
-  return {
-    total: attempts.length,
-
-    inProgress:
-      attempts.filter(
-        item =>
-          item.status === 'In Progress'
-      ).length,
-
-    completed:
-      attempts.filter(
-        item =>
-          item.status === 'Completed'
-      ).length,
-
-    expired:
-      attempts.filter(
-        item =>
-          item.status === 'Time Expired'
-      ).length,
-
-    terminated:
-      attempts.filter(
-        item =>
-          item.status === 'Terminated'
-      ).length
-  };
-}
-
-function renderAdminDashboard() {
-  const counts =
-    attemptCounts();
-
-  const total =
-    counts.total || 1;
-
-  const averageViolations =
-    db.attempts.length
-      ? (
-          db.attempts.reduce(
-            (sum, attempt) =>
-              sum +
-              (attempt.violations || 0),
-            0
-          ) /
-          db.attempts.length
-        ).toFixed(1)
-      : '0.0';
-
-  const completion =
-    counts.total
-      ? Math.round(
-          counts.completed /
-          counts.total *
-          100
-        )
-      : 0;
-
-  $('#admin-dashboard-page').innerHTML = `
-    <div class="page-head">
-      <div>
-        <span class="eyebrow">
-          OVERVIEW
-        </span>
-
-        <h3>
-          Exam Dashboard
-        </h3>
-
-        <p>
-          Monitor rooms, active sessions, submissions and security events.
-        </p>
-      </div>
-
-      <div class="actions">
-        <button
-          class="primary-btn"
-          data-action="new-room"
-        >
-          + Create Exam Room
-        </button>
-      </div>
-    </div>
-
-    <div class="stat-grid">
-      ${stat('Exam Rooms', db.rooms.length)}
-      ${stat('Total Sessions', counts.total)}
-      ${stat('In Progress', counts.inProgress)}
-      ${stat('Completed', counts.completed, 'success')}
-      ${stat('Terminated', counts.terminated, 'danger')}
-      ${stat('Avg. Violations', averageViolations)}
-    </div>
-
-    <div class="grid-2">
-
-      <div class="panel">
-        <h3>
-          Overall Completion
-        </h3>
-
-        <div class="progress-bar">
-          <div
-            class="progress-fill"
-            style="width:${completion}%"
-          ></div>
-        </div>
-
-        <div class="progress-meta">
-          <span>
-            ${completion}% completed
-          </span>
-
-          <span>
-            ${counts.completed} of ${counts.total} sessions
-          </span>
-        </div>
-      </div>
-
-      <div class="panel">
-        <h3>
-          Room Capacity
-        </h3>
-
-        <div class="quick-grid">
-
-          <div class="quick-card">
-            <strong>
-              ${db.rooms.length}
-            </strong>
-
-            <span>
-              Active rooms
-            </span>
-          </div>
-
-          <div class="quick-card">
-            <strong>
-              ${Math.max(
-                0,
-                6 - db.rooms.length
-              )}
-            </strong>
-
-            <span>
-              Slots available
-            </span>
-          </div>
-
-          <div class="quick-card">
-            <strong>
-              ${db.attempts.filter(
-                attempt =>
-                  attempt.status ===
-                  'In Progress'
-              ).length}
-            </strong>
-
-            <span>
-              Active sessions
-            </span>
-          </div>
-
-        </div>
-      </div>
-
-    </div>
-
-    <div
-      class="panel"
-      style="margin-top:18px"
-    >
-
-      <div
-        class="page-head"
-        style="margin-bottom:12px"
-      >
-
-        <div>
-          <h3>
-            Recent Submissions
-          </h3>
-
-          <p>
-            Latest examination sessions.
-          </p>
-        </div>
-
-        <button
-          class="secondary-btn"
-          data-action="view-submissions"
-        >
-          View All
-        </button>
-
-      </div>
-
-      ${submissionTable(
-        db.attempts
-          .slice()
-          .sort(
-            (a, b) =>
-              (b.startedAt || 0) -
-              (a.startedAt || 0)
-          )
-          .slice(0, 8)
-      )}
-
-    </div>
-  `;
-
-  bindActions();
-}
-
-/* =========================================================
-   ADMIN ROOMS
-   ========================================================= */
-
-function stat(
-  label,
-  value,
-  className = ''
-) {
-  return `
-    <div class="stat-card ${className}">
-      <span class="stat-label">
-        ${label}
-      </span>
-
-      <span class="stat-value">
-        ${value}
-      </span>
-    </div>
-  `;
-}
-
-function badge(status) {
-  const colors = {
-    Completed: 'green',
-    'Time Expired': 'yellow',
-    Terminated: 'red',
-    'In Progress': 'blue',
-    Locked: 'gray',
-    Available: 'green',
-    Unavailable: 'gray'
-  };
-
-  return `
-    <span class="badge ${colors[status] || 'gray'}">
-      ${esc(status)}
-    </span>
-  `;
-}
-
-function renderAdminRooms() {
-  const slots =
-    6 - db.rooms.length;
-
-  $('#admin-rooms-page').innerHTML = `
-    <div class="page-head">
-
-      <div>
-        <span class="eyebrow">
-          EXAM ROOM MANAGEMENT
-        </span>
-
-        <h3>
-          Examination Rooms
-        </h3>
-
-        <p>
-          Each room can be accessed by multiple participants at the same time.
-          There is no participant submission limit.
-        </p>
-
-        <div class="slot-note">
-          ${db.rooms.length}/6 rooms used
-        </div>
-      </div>
-
-      <div class="actions">
-        <button
-          class="primary-btn"
-          data-action="new-room"
-          ${slots <= 0 ? 'disabled' : ''}
-        >
-          + Create Room
-        </button>
-      </div>
-
-    </div>
-
-    <div class="exam-grid">
-      ${
-        db.rooms.length
-          ? db.rooms
-              .map(roomCard)
-              .join('')
-          : `
-            <div
-              class="panel"
-              style="grid-column:1/-1"
-            >
-              <div class="empty">
-                No examination rooms have been created.
-              </div>
-            </div>
-          `
-      }
-    </div>
-  `;
-
-  bindActions();
-}
-
-function roomCard(room) {
-  const availability =
-    getAvailability(room);
-
-  const attempts =
-    db.attempts.filter(
-      attempt =>
-        attempt.roomId === room.id
-    );
-
-  const activeSessions =
-    attempts.filter(
-      attempt =>
-        attempt.status === 'In Progress'
-    ).length;
-
-  return `
-    <article class="exam-card">
-
-      <div class="exam-card-top">
-
-        <span class="badge ${
-          room.active
-            ? 'green'
-            : 'gray'
-        }">
-          ${
-            room.active
-              ? 'ACTIVE'
-              : 'DISABLED'
-          }
-        </span>
-
-        ${badge(
-          availability.status
-        )}
-
-      </div>
-
-      <div class="room-number-display">
-        ${esc(room.roomNumber)}
-      </div>
-
-      <h3>
-        ${esc(room.title)}
-      </h3>
-
-      <p>
-        ${esc(
-          room.description ||
-          'No description provided.'
-        )}
-      </p>
-
-      <div class="exam-meta">
-
-        <div class="meta-box">
-          <span>
-            Timer
-          </span>
-
-          <strong>
-            ${
-              room.timerEnabled
-                ? room.durationMinutes +
-                  ' min'
-                : 'Off'
-            }
-          </strong>
-        </div>
-
-        <div class="meta-box">
-          <span>
-            Anti-cheat
-          </span>
-
-          <strong>
-            ${
-              room.antiCheat
-                ? 'On'
-                : 'Off'
-            }
-          </strong>
-        </div>
-
-        <div class="meta-box">
-          <span>
-            Sessions
-          </span>
-
-          <strong>
-            ${attempts.length}
-          </strong>
-        </div>
-
-        <div class="meta-box">
-          <span>
-            Active Now
-          </span>
-
-          <strong>
-            ${activeSessions}
-          </strong>
-        </div>
-
-      </div>
-
-      <div class="exam-card-actions">
-
-        <button
-          class="secondary-btn"
-          data-action="edit-room"
-          data-id="${room.id}"
-        >
-          Edit
-        </button>
-
-        <button
-          class="danger-btn"
-          data-action="delete-room"
-          data-id="${room.id}"
-        >
-          Delete
-        </button>
-
-      </div>
-
-    </article>
-  `;
-}
-
-/* =========================================================
-   ROOM MODAL
-   ========================================================= */
-
-function openRoomModal(id = null) {
-  const room =
-    id
-      ? db.rooms.find(
-          item => item.id === id
-        )
-      : null;
-
-  if (
-    !room &&
-    db.rooms.length >= 6
-  ) {
-    toast(
-      'Maximum of 6 examination rooms reached.',
-      'error'
-    );
-
-    return;
-  }
-
-  const data =
-    room ||
-    {
-      roomNumber:
-        'ROOM-' +
-        String(
-          db.rooms.length + 1
-        ).padStart(3, '0'),
-
-      passcode:
-        String(
-          Math.floor(
-            100000 +
-            Math.random() * 900000
-          )
-        ),
-
-      title: '',
-      description: '',
-      formUrl: '',
-      antiCheat: true,
-      maxViolations: 3,
-      timerEnabled: true,
-      durationMinutes: 60,
-      startAt: '',
-      endAt: '',
-      active: true
-    };
-
-  const isoLocal =
-    value =>
-      value
-        ? new Date(value)
-            .toISOString()
-            .slice(0, 16)
-        : '';
-
-  const modal =
-    $('#modal-root');
-
-  if (!modal) return;
-
-  modal.hidden = false;
-
-  modal.innerHTML = `
-    <div
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-    >
-
-      <div class="modal-head">
-
-        <div>
-          <span class="eyebrow">
-            ${
-              room
-                ? 'EDIT EXAM ROOM'
-                : 'NEW EXAM ROOM'
-            }
-          </span>
-
-          <h3>
-            ${
-              room
-                ? 'Update Examination Room'
-                : 'Create Examination Room'
-            }
-          </h3>
-        </div>
-
-        <button
-          type="button"
-          class="close-btn"
-          data-action="close-modal"
-          aria-label="Close"
-        >
-          ×
-        </button>
-
-      </div>
-
-      <form id="room-form">
-
-        <div class="modal-body">
-
-          <div class="form-grid">
-
-            <div class="field">
-
-              <label class="form-label">
-                Room Number
-              </label>
-
-              <input
-                name="roomNumber"
-                required
-                value="${esc(
-                  data.roomNumber
-                )}"
-                placeholder="ROOM-001"
-              >
-
-            </div>
-
-            <div class="field">
-
-              <label class="form-label">
-                Passcode
-              </label>
-
-              <input
-                name="passcode"
-                required
-                value="${esc(
-                  data.passcode
-                )}"
-                placeholder="123456"
-              >
-
-              <div class="helper">
-                Participants will use this Room Number and Passcode to enter.
-              </div>
-
-            </div>
-
-            <div class="field full-span">
-
-              <label class="form-label">
-                Examination Title
-              </label>
-
-              <input
-                name="title"
-                required
-                value="${esc(
-                  data.title
-                )}"
-                placeholder="e.g. HR Certification Examination"
-              >
-
-            </div>
-
-            <div class="field full-span">
-
-              <label class="form-label">
-                Description
-              </label>
-
-              <textarea
-                name="description"
-                rows="3"
-                placeholder="Short examination description"
-              >${esc(
-                data.description
-              )}</textarea>
-
-            </div>
-
-            <div class="field full-span">
-
-              <label class="form-label">
-                Google Forms Link
-              </label>
-
-              <input
-                name="formUrl"
-                type="url"
-                required
-                value="${esc(
-                  data.formUrl
-                )}"
-                placeholder="https://docs.google.com/forms/d/e/.../viewform"
-              >
-
-              <div class="helper">
-                The Google Form will be displayed inside the examination portal.
-              </div>
-
-            </div>
-
-            <div class="field">
-
-              <label class="form-label">
-                Maximum Violations
-              </label>
-
-              <input
-                name="maxViolations"
-                type="number"
-                min="1"
-                max="99"
-                required
-                value="${data.maxViolations}"
-              >
-
-            </div>
-
-            <div class="field">
-
-              <label class="form-label">
-                Timer Duration
-              </label>
-
-              <input
-                name="durationMinutes"
-                type="number"
-                min="1"
-                max="1440"
-                required
-                value="${data.durationMinutes}"
-              >
-
-              <div class="helper">
-                Duration in minutes.
-              </div>
-
-            </div>
-
-            <div class="field full-span">
-
-              <div class="checkbox-row">
-
-                <input
-                  id="roomAntiCheat"
-                  name="antiCheat"
-                  type="checkbox"
-                  ${
-                    data.antiCheat
-                      ? 'checked'
-                      : ''
-                  }
-                >
-
-                <label for="roomAntiCheat">
-                  Enable anti-cheat monitoring
-                </label>
-
-              </div>
-
-              <div class="helper">
-                Detects tab changes, focus loss, fullscreen exits and restricted shortcuts.
-              </div>
-
-            </div>
-
-            <div class="field full-span">
-
-              <div class="checkbox-row">
-
-                <input
-                  id="roomTimer"
-                  name="timerEnabled"
-                  type="checkbox"
-                  ${
-                    data.timerEnabled
-                      ? 'checked'
-                      : ''
-                  }
-                >
-
-                <label for="roomTimer">
-                  Enable examination timer
-                </label>
-
-              </div>
-
-            </div>
-
-            <div class="field">
-
-              <label class="form-label">
-                Available From
-              </label>
-
-              <input
-                name="startAt"
-                type="datetime-local"
-                value="${isoLocal(
-                  data.startAt
-                )}"
-              >
-
-              <div class="helper">
-                Leave blank for immediate availability.
-              </div>
-
-            </div>
-
-            <div class="field">
-
-              <label class="form-label">
-                Available Until
-              </label>
-
-              <input
-                name="endAt"
-                type="datetime-local"
-                value="${isoLocal(
-                  data.endAt
-                )}"
-              >
-
-              <div class="helper">
-                Leave blank for no end date.
-              </div>
-
-            </div>
-
-            <div class="field full-span">
-
-              <div class="checkbox-row">
-
-                <input
-                  id="roomActive"
-                  name="active"
-                  type="checkbox"
-                  ${
-                    data.active
-                      ? 'checked'
-                      : ''
-                  }
-                >
-
-                <label for="roomActive">
-                  Examination room is active
-                </label>
-
-              </div>
-
-            </div>
-
-          </div>
-
-        </div>
-
-        <div class="modal-footer">
-
-          <button
-            type="button"
-            class="secondary-btn"
-            data-action="close-modal"
-          >
-            Cancel
-          </button>
-
-          <button
-            type="submit"
-            class="primary-btn"
-          >
-            ${
-              room
-                ? 'Save Changes'
-                : 'Create Room'
-            }
-          </button>
-
-        </div>
-
-      </form>
-
-    </div>
-  `;
-
-  const form =
-    $('#room-form');
-
-  if (!form) return;
-
-  form.addEventListener(
-    'submit',
-    event => {
-      event.preventDefault();
-
-      const formData =
-        new FormData(
-          event.target
-        );
-
-      const roomNumber =
-        String(
-          formData.get(
-            'roomNumber'
-          ) || ''
-        ).trim();
-
-      const passcode =
-        String(
-          formData.get(
-            'passcode'
-          ) || ''
-        ).trim();
-
-      const formUrl =
-        String(
-          formData.get(
-            'formUrl'
-          ) || ''
-        ).trim();
-
-      if (
-        !/^https:\/\/(docs\.google\.com|forms\.google\.com)\//i.test(
-          formUrl
-        )
-      ) {
-        toast(
-          'Please enter a valid Google Forms URL.',
-          'error'
-        );
-
-        return;
-      }
-
-      if (
-        !roomNumber ||
-        !passcode
-      ) {
-        toast(
-          'Room Number and Passcode are required.',
-          'error'
-        );
-
-        return;
-      }
-
-      /*
-        Prevent duplicate room numbers.
-      */
-
-      const duplicate =
-        db.rooms.find(
-          item =>
-            item.id !== room?.id &&
-            String(
-              item.roomNumber || ''
-            )
-              .trim()
-              .toLowerCase() ===
-            roomNumber.toLowerCase()
-        );
-
-      if (duplicate) {
-        toast(
-          'That Room Number already exists.',
-          'error'
-        );
-
-        return;
-      }
-
-      const durationMinutes =
-        Math.max(
-          1,
-          Math.round(
-            Number(
-              formData.get(
-                'durationMinutes'
-              )
-            ) || 60
-          )
-        );
-
-      const obj = {
-        roomNumber,
-        passcode,
+    /*
+     * Migrate old examiner-based exams into rooms.
+     */
+    if (
+      rooms.length === 0 &&
+      Array.isArray(stored.exams) &&
+      stored.exams.length
+    ) {
+      rooms = stored.exams.map((exam, index) => ({
+        id: exam.id || uid('room'),
+
+        roomNumber:
+          exam.roomNumber ||
+          String(1001 + index),
+
+        passcode:
+          exam.passcode ||
+          String(exam.examinerPassword || '123456'),
 
         title:
-          String(
-            formData.get(
-              'title'
-            ) || ''
-          ).trim(),
+          exam.title ||
+          `Examination Room ${index + 1}`,
 
         description:
-          String(
-            formData.get(
-              'description'
-            ) || ''
-          ).trim(),
+          exam.description || '',
 
-        formUrl,
+        formUrl:
+          exam.formUrl || DEFAULT_FORM,
 
         antiCheat:
-          formData.has(
-            'antiCheat'
-          ),
+          boolSetting(exam.antiCheat, true),
 
         maxViolations:
           Math.max(
             1,
             Math.round(
-              Number(
-                formData.get(
-                  'maxViolations'
-                )
-              ) || 3
+              Number(exam.maxViolations) || 3
             )
           ),
 
         timerEnabled:
-          formData.has(
-            'timerEnabled'
+          boolSetting(exam.timerEnabled, true),
+
+        durationMinutes:
+          Math.max(
+            1,
+            Math.round(
+              Number(exam.durationMinutes) || 60
+            )
           ),
 
-        durationMinutes,
-
         startAt:
-          formData.get(
-            'startAt'
-          )
-            ? new Date(
-                formData.get(
-                  'startAt'
-                )
-              ).toISOString()
-            : '',
+          exam.startAt || '',
 
         endAt:
-          formData.get(
-            'endAt'
-          )
-            ? new Date(
-                formData.get(
-                  'endAt'
-                )
-              ).toISOString()
-            : '',
+          exam.endAt || '',
 
         active:
-          formData.has(
-            'active'
-          )
-      };
+          exam.active !== false,
 
-      if (!obj.title) {
-        toast(
-          'Please enter an examination title.',
-          'error'
-        );
+        createdAt:
+          exam.createdAt || Date.now(),
 
-        return;
-      }
-
-      if (room) {
-        Object.assign(
-          room,
-          obj
-        );
-
-        toast(
-          'Examination room updated successfully.',
-          'success'
-        );
-      } else {
-        db.rooms.push({
-          id: uid('room'),
-          ...obj,
-          createdAt: Date.now(),
-          createdBy:
-            currentUser()?.id ||
-            'u-admin'
-        });
-
-        toast(
-          'Examination room created successfully.',
-          'success'
-        );
-      }
-
-      saveDB();
-
-      closeModal();
-
-      renderAdminRooms();
+        createdBy: 'u-admin'
+      }));
     }
-  );
-}
 
-/* =========================================================
-   DELETE ROOM
-   ========================================================= */
 
-function deleteRoom(id) {
-  const room =
-    db.rooms.find(
-      item => item.id === id
-    );
+    if (!rooms.length) {
+      rooms = [clone(DEFAULT_ROOM)];
+    }
 
-  if (!room) return;
 
-  const attemptCount =
-    db.attempts.filter(
-      attempt =>
-        attempt.roomId === id
-    ).length;
+    rooms = rooms.map(room => ({
+      ...room,
 
-  const confirmed =
-    confirm(
-      `Delete "${room.title}"?\n\n` +
-      `The room will be removed from the active room list.\n` +
-      `${attemptCount} historical submission(s) will remain in the reports.\n\n` +
-      `Continue?`
-    );
+      roomNumber:
+        String(room.roomNumber || '').trim(),
 
-  if (!confirmed) return;
+      passcode:
+        String(room.passcode || '').trim(),
 
-  db.rooms =
-    db.rooms.filter(
-      item => item.id !== id
-    );
+      title:
+        String(room.title || 'Untitled Examination'),
 
-  saveDB();
+      description:
+        String(room.description || ''),
 
-  renderAdminRooms();
+      formUrl:
+        String(room.formUrl || DEFAULT_FORM),
 
-  toast(
-    'Examination room deleted.',
-    'success'
-  );
-}
+      antiCheat:
+        boolSetting(room.antiCheat, false),
 
-/* =========================================================
-   MODAL
-   ========================================================= */
+      maxViolations:
+        Math.max(
+          1,
+          Math.round(Number(room.maxViolations) || 3)
+        ),
 
-function closeModal() {
-  const modal =
-    $('#modal-root');
+      timerEnabled:
+        boolSetting(room.timerEnabled, false),
 
-  if (!modal) return;
+      durationMinutes:
+        Math.max(
+          1,
+          Math.round(Number(room.durationMinutes) || 60)
+        ),
 
-  modal.hidden = true;
-  modal.innerHTML = '';
-}
+      active:
+        room.active !== false
+    }));
 
-/*
-  This event listener ensures clicking the dark backdrop
-  also closes the modal.
-*/
 
-document.addEventListener(
-  'click',
-  event => {
-    const root =
-      $('#modal-root');
+    const result = {
+      users: [
+        {
+          id: 'u-admin',
+          username: ADMIN_USERNAME,
+          password: ADMIN_PASSWORD,
+          role: 'admin',
+          name: 'Administrator'
+        }
+      ],
 
+      rooms,
+
+      attempts:
+        Array.isArray(stored.attempts)
+          ? stored.attempts
+          : [],
+
+      violations:
+        Array.isArray(stored.violations)
+          ? stored.violations
+          : [],
+
+      theme:
+        stored.theme === 'light'
+          ? 'light'
+          : 'dark'
+    };
+
+
+    /*
+     * Make sure the administrator account always exists.
+     */
     if (
-      !root ||
-      root.hidden
+      !result.users.some(
+        user =>
+          user.username === ADMIN_USERNAME &&
+          user.role === 'admin'
+      )
     ) {
+      result.users.unshift({
+        id: 'u-admin',
+        username: ADMIN_USERNAME,
+        password: ADMIN_PASSWORD,
+        role: 'admin',
+        name: 'Administrator'
+      });
+    }
+
+
+    safeSet(
+      localStorage,
+      DB_KEY,
+      JSON.stringify(result)
+    );
+
+    return result;
+  }
+
+
+  /* ================================================================
+     VIEW MANAGEMENT
+  ================================================================ */
+
+  function showView(name) {
+    Object.values(views).forEach(view => {
+      if (view) {
+        view.hidden = true;
+        view.classList.remove('active');
+      }
+    });
+
+    if (views[name]) {
+      views[name].hidden = false;
+      views[name].classList.add('active');
+    }
+
+    window.scrollTo(0, 0);
+  }
+
+
+  /* ================================================================
+     TOAST
+  ================================================================ */
+
+  function toast(message, type = '') {
+    const container = $('#toast-container');
+
+    if (!container) return;
+
+    const item = document.createElement('div');
+
+    item.className =
+      `toast ${type}`;
+
+    item.textContent = message;
+
+    container.appendChild(item);
+
+    setTimeout(() => {
+      item.remove();
+    }, 3500);
+  }
+
+
+  /* ================================================================
+     THEME
+  ================================================================ */
+
+  function applyTheme() {
+    const light = db.theme === 'light';
+
+    document.documentElement.dataset.theme =
+      light ? 'light' : 'dark';
+
+    document.body.classList.toggle(
+      'light',
+      light
+    );
+
+    document.body.classList.toggle(
+      'dark',
+      !light
+    );
+
+    [
+      'theme-toggle-login',
+      'theme-toggle-admin',
+      'theme-toggle-examiner'
+    ].forEach(id => {
+
+      const button = $('#' + id);
+
+      if (!button) return;
+
+      button.textContent =
+        light ? '☾' : '☼';
+
+      button.title =
+        light
+          ? 'Switch to dark mode'
+          : 'Switch to light mode';
+
+    });
+  }
+
+
+  function toggleTheme() {
+    db.theme =
+      db.theme === 'light'
+        ? 'dark'
+        : 'light';
+
+    saveDB();
+    applyTheme();
+  }
+
+
+  /* ================================================================
+     LOGIN
+  ================================================================ */
+
+  function showLoginError(message) {
+    const error = $('#login-error');
+
+    if (!error) return;
+
+    error.textContent = message;
+    error.hidden = false;
+  }
+
+
+  function clearLoginError() {
+    const error = $('#login-error');
+
+    if (!error) return;
+
+    error.textContent = '';
+    error.hidden = true;
+  }
+
+
+  function loginToRoom(event) {
+    event.preventDefault();
+
+    clearLoginError();
+
+    const roomInput = $('#login-room');
+    const passcodeInput = $('#login-passcode');
+
+    const roomNumber =
+      String(roomInput?.value || '').trim();
+
+    const passcode =
+      String(passcodeInput?.value || '').trim();
+
+
+    if (!roomNumber || !passcode) {
+      showLoginError(
+        'Please enter both the room number and passcode.'
+      );
       return;
     }
 
-    if (
-      event.target === root
-    ) {
-      closeModal();
+
+    db = loadDB();
+
+
+    const room = db.rooms.find(
+      item =>
+        String(item.roomNumber).toLowerCase() ===
+          roomNumber.toLowerCase() &&
+        String(item.passcode) === passcode
+    );
+
+
+    if (!room) {
+      showLoginError(
+        'Invalid room number or passcode. Please verify the examination access details.'
+      );
+
+      passcodeInput.value = '';
+      passcodeInput.focus();
+
+      return;
+    }
+
+
+    if (!room.active) {
+      showLoginError(
+        'This examination room is currently disabled.'
+      );
+
+      return;
+    }
+
+
+    const availability =
+      getAvailability(room);
+
+    if (availability.status !== 'Available') {
+      showLoginError(
+        availability.message
+      );
+
+      return;
+    }
+
+
+    /*
+     * Every browser/session gets its own participant ID.
+     * There is intentionally NO attempt lock.
+     */
+    const participantId =
+      uid('participant');
+
+
+    session = {
+      role: 'participant',
+      participantId,
+      roomId: room.id,
+      roomNumber: room.roomNumber,
+      loginAt: Date.now()
+    };
+
+
+    saveSession();
+
+
+    currentRoom = clone(room);
+    currentAttempt = null;
+    examState = null;
+
+
+    $('#login-form').reset();
+
+    openParticipantDashboard();
+  }
+
+
+  /* ================================================================
+     ADMIN LOGIN
+  ================================================================ */
+
+  function openAdminLogin() {
+    $('#admin-login-modal').hidden = false;
+
+    setTimeout(() => {
+      $('#admin-username')?.focus();
+    }, 50);
+  }
+
+
+  function closeAdminLogin() {
+    const modal =
+      $('#admin-login-modal');
+
+    if (!modal) return;
+
+    modal.hidden = true;
+
+    $('#admin-login-form')?.reset();
+
+    const error =
+      $('#admin-login-error');
+
+    if (error) {
+      error.hidden = true;
+      error.textContent = '';
     }
   }
-);
 
-/* =========================================================
-   SUBMISSION TABLE
-   ========================================================= */
 
-function submissionTable(rows) {
-  if (!rows.length) {
+  function adminLogin(event) {
+    event.preventDefault();
+
+    const username =
+      String(
+        $('#admin-username')?.value || ''
+      ).trim();
+
+    const password =
+      String(
+        $('#admin-password')?.value || ''
+      );
+
+
+    const error =
+      $('#admin-login-error');
+
+
+    if (
+      username !== ADMIN_USERNAME ||
+      password !== ADMIN_PASSWORD
+    ) {
+      error.textContent =
+        'Invalid administrator credentials.';
+
+      error.hidden = false;
+
+      return;
+    }
+
+
+    closeAdminLogin();
+
+
+    session = {
+      role: 'admin',
+      username: ADMIN_USERNAME,
+      loginAt: Date.now()
+    };
+
+
+    saveSession();
+
+    openAdmin();
+  }
+
+
+  /* ================================================================
+     SESSION / LOGOUT
+  ================================================================ */
+
+  function logout() {
+    clearInterval(timer);
+
+    timer = null;
+
+    examState = null;
+    currentAttempt = null;
+    currentRoom = null;
+
+    violationOverlayOpen = false;
+
+    $('#violation-overlay').hidden = true;
+
+    document.body.classList.remove(
+      'lockdown-active'
+    );
+
+
+    session = null;
+
+    saveSession();
+
+    showView('login');
+
+    clearLoginError();
+  }
+
+
+  /* ================================================================
+     CURRENT PARTICIPANT
+  ================================================================ */
+
+  function participantLabel() {
+    if (!session?.participantId) {
+      return 'Participant';
+    }
+
+    return (
+      'Participant ' +
+      session.participantId
+        .split('-')
+        .pop()
+        .toUpperCase()
+    );
+  }
+
+
+  /* ================================================================
+     AVAILABILITY
+  ================================================================ */
+
+  function getAvailability(room) {
+    if (!room || room.active === false) {
+      return {
+        status: 'Unavailable',
+        message: 'This examination room is disabled.'
+      };
+    }
+
+
+    const now = Date.now();
+
+    const start =
+      room.startAt
+        ? new Date(room.startAt).getTime()
+        : null;
+
+    const end =
+      room.endAt
+        ? new Date(room.endAt).getTime()
+        : null;
+
+
+    if (
+      Number.isFinite(start) &&
+      now < start
+    ) {
+      return {
+        status: 'Unavailable',
+        message:
+          `This room will become available on ${fmtDate(start)}.`
+      };
+    }
+
+
+    if (
+      Number.isFinite(end) &&
+      now > end
+    ) {
+      return {
+        status: 'Unavailable',
+        message:
+          'The availability period for this room has ended.'
+      };
+    }
+
+
+    return {
+      status: 'Available',
+      message: 'Room is available.'
+    };
+  }
+
+
+  /* ================================================================
+     ADMIN PORTAL
+  ================================================================ */
+
+  function openAdmin() {
+    const user =
+      db.users.find(
+        item => item.role === 'admin'
+      );
+
+
+    if (!user) {
+      logout();
+      return;
+    }
+
+
+    $('#admin-user-name').textContent =
+      user.name;
+
+    $('#admin-user-role').textContent =
+      'Administrator';
+
+    $('#admin-avatar').textContent =
+      user.name.charAt(0).toUpperCase();
+
+
+    showView('admin');
+
+    adminPage('dashboard');
+  }
+
+
+  const ADMIN_PAGE_TITLES = {
+    dashboard: 'Dashboard',
+    exams: 'Exam Rooms',
+    submissions: 'Submissions',
+    violations: 'Security Logs',
+    analytics: 'Analytics',
+    settings: 'Settings'
+  };
+
+
+  function adminPage(page) {
+    if (!ADMIN_PAGE_TITLES[page]) {
+      page = 'dashboard';
+    }
+
+
+    $$('[data-admin-page]').forEach(
+      button => {
+        button.classList.toggle(
+          'active',
+          button.dataset.adminPage === page
+        );
+      }
+    );
+
+
+    $$('.admin-page').forEach(
+      section => {
+        section.classList.remove('active');
+      }
+    );
+
+
+    const target =
+      $('#admin-' + page + '-page');
+
+    if (target) {
+      target.classList.add('active');
+    }
+
+
+    $('#admin-page-title').textContent =
+      ADMIN_PAGE_TITLES[page];
+
+
+    $('#admin-sidebar')?.classList.remove(
+      'open'
+    );
+
+
+    renderAdminPage(page);
+  }
+
+
+  function renderAdminPage(page) {
+    const renderer = {
+      dashboard: renderAdminDashboard,
+      exams: renderAdminRooms,
+      submissions: renderSubmissions,
+      violations: renderViolations,
+      analytics: renderAnalytics,
+      settings: renderSettings
+    }[page];
+
+
+    if (renderer) {
+      renderer();
+    }
+  }
+
+
+  /* ================================================================
+     ADMIN DASHBOARD
+  ================================================================ */
+
+  function attemptCounts() {
+    const attempts = db.attempts;
+
+    return {
+      total: attempts.length,
+
+      inProgress:
+        attempts.filter(
+          item =>
+            item.status === 'In Progress'
+        ).length,
+
+      completed:
+        attempts.filter(
+          item =>
+            item.status === 'Completed'
+        ).length,
+
+      expired:
+        attempts.filter(
+          item =>
+            item.status === 'Time Expired'
+        ).length,
+
+      terminated:
+        attempts.filter(
+          item =>
+            item.status === 'Terminated'
+        ).length
+    };
+  }
+
+
+  function renderAdminDashboard() {
+    const counts = attemptCounts();
+
+    const activeRooms =
+      db.rooms.filter(
+        room =>
+          getAvailability(room).status ===
+          'Available'
+      ).length;
+
+
+    const completionRate =
+      counts.total
+        ? Math.round(
+            counts.completed /
+            counts.total *
+            100
+          )
+        : 0;
+
+
+    const recent =
+      db.attempts
+        .slice()
+        .sort(
+          (a, b) =>
+            (b.startedAt || 0) -
+            (a.startedAt || 0)
+        )
+        .slice(0, 7);
+
+
+    $('#admin-dashboard-page').innerHTML = `
+
+      <div class="page-head dashboard-hero">
+
+        <div>
+
+          <span class="eyebrow">
+            CONTROL CENTER
+          </span>
+
+          <h3>
+            Examination Overview
+          </h3>
+
+          <p>
+            Monitor rooms, examination activity,
+            completion and security events from one
+            centralized workspace.
+          </p>
+
+        </div>
+
+        <div class="actions">
+
+          <button
+            class="primary-btn compact"
+            data-action="new-exam">
+            + Create Exam Room
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <div class="stat-grid admin-stats">
+
+        ${stat(
+          'Exam Rooms',
+          db.rooms.length,
+          'blue',
+          'Configured rooms'
+        )}
+
+        ${stat(
+          'Active Rooms',
+          activeRooms,
+          'green',
+          'Currently available'
+        )}
+
+        ${stat(
+          'Total Sessions',
+          counts.total,
+          'purple',
+          'All participant sessions'
+        )}
+
+        ${stat(
+          'In Progress',
+          counts.inProgress,
+          'blue',
+          'Live examinations'
+        )}
+
+        ${stat(
+          'Completed',
+          counts.completed,
+          'green',
+          'Successfully submitted'
+        )}
+
+        ${stat(
+          'Security Events',
+          db.violations.length,
+          'red',
+          'Recorded events'
+        )}
+
+      </div>
+
+
+      <div class="dashboard-grid">
+
+        <div class="panel dashboard-panel">
+
+          <div class="panel-heading">
+
+            <div>
+              <span class="eyebrow">
+                ACTIVITY
+              </span>
+
+              <h3>
+                Recent Examination Sessions
+              </h3>
+            </div>
+
+            <button
+              class="secondary-btn"
+              data-action="view-submissions">
+              View All
+            </button>
+
+          </div>
+
+          ${submissionTable(recent)}
+
+        </div>
+
+
+        <div class="panel dashboard-panel">
+
+          <div class="panel-heading">
+
+            <div>
+              <span class="eyebrow">
+                ROOM STATUS
+              </span>
+
+              <h3>
+                Examination Rooms
+              </h3>
+
+            </div>
+
+          </div>
+
+
+          <div class="room-status-list">
+
+            ${
+              db.rooms.length
+                ? db.rooms
+                    .slice(0, 6)
+                    .map(roomStatusRow)
+                    .join('')
+                : `
+                  <div class="empty">
+                    No examination rooms configured.
+                  </div>
+                `
+            }
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <div class="panel overview-progress-panel">
+
+        <div class="panel-heading">
+
+          <div>
+            <span class="eyebrow">
+              COMPLETION
+            </span>
+
+            <h3>
+              Overall Examination Completion
+            </h3>
+          </div>
+
+          <strong class="large-number">
+            ${completionRate}%
+          </strong>
+
+        </div>
+
+
+        <div class="progress-bar large">
+          <div
+            class="progress-fill"
+            style="width:${completionRate}%">
+          </div>
+        </div>
+
+
+        <div class="progress-meta">
+
+          <span>
+            ${counts.completed} completed
+          </span>
+
+          <span>
+            ${counts.total} total sessions
+          </span>
+
+        </div>
+
+      </div>
+
+    `;
+
+    bindActions();
+  }
+
+
+  function stat(
+    label,
+    value,
+    type = '',
+    description = ''
+  ) {
     return `
-      <div class="empty">
-        No exam sessions yet.
+      <div class="stat-card ${type}">
+
+        <div class="stat-card-top">
+          <span class="stat-label">
+            ${esc(label)}
+          </span>
+
+          <span class="stat-indicator"></span>
+        </div>
+
+        <strong class="stat-value">
+          ${value}
+        </strong>
+
+        <span class="stat-description">
+          ${esc(description)}
+        </span>
+
       </div>
     `;
   }
 
-  return `
-    <div class="table-wrap">
 
-      <table class="data-table">
+  function roomStatusRow(room) {
+    const availability =
+      getAvailability(room);
 
-        <thead>
-          <tr>
-            <th>Participant</th>
-            <th>Room</th>
-            <th>Exam</th>
-            <th>Started</th>
-            <th>Ended</th>
-            <th>Status</th>
-            <th>Violations</th>
-          </tr>
-        </thead>
+    const sessions =
+      db.attempts.filter(
+        item => item.examId === room.id
+      ).length;
 
-        <tbody>
 
-          ${rows
-            .map(
-              attempt => `
-                <tr>
+    return `
+      <div class="room-status-row">
 
-                  <td>
-                    ${esc(
-                      attempt.participantId ||
-                      'Participant'
-                    )}
-                  </td>
-
-                  <td>
-                    ${esc(
-                      attempt.roomNumber ||
-                      '—'
-                    )}
-                  </td>
-
-                  <td>
-                    ${esc(
-                      attempt.examTitle ||
-                      '—'
-                    )}
-                  </td>
-
-                  <td>
-                    ${fmtDate(
-                      attempt.startedAt
-                    )}
-                  </td>
-
-                  <td>
-                    ${fmtDate(
-                      attempt.endedAt
-                    )}
-                  </td>
-
-                  <td>
-                    ${badge(
-                      attempt.status
-                    )}
-                  </td>
-
-                  <td>
-                    ${attempt.violations || 0}
-                  </td>
-
-                </tr>
-              `
-            )
-            .join('')}
-
-        </tbody>
-
-      </table>
-
-    </div>
-  `;
-}
-
-/* =========================================================
-   SUBMISSIONS
-   ========================================================= */
-
-function renderSubmissions() {
-  const rows =
-    db.attempts
-      .slice()
-      .sort(
-        (a, b) =>
-          (b.startedAt || 0) -
-          (a.startedAt || 0)
-      );
-
-  $('#admin-submissions-page').innerHTML = `
-    <div class="page-head">
-
-      <div>
-        <span class="eyebrow">
-          MONITORING
-        </span>
-
-        <h3>
-          Submissions
-        </h3>
-
-        <p>
-          Every participant submission is recorded independently.
-        </p>
-      </div>
-
-      <div class="actions">
-
-        <button
-          class="secondary-btn"
-          data-action="refresh-admin"
-        >
-          Refresh
-        </button>
-
-      </div>
-
-    </div>
-
-    <div class="panel">
-      ${submissionTable(rows)}
-    </div>
-  `;
-
-  bindActions();
-}
-
-/* =========================================================
-   VIOLATIONS
-   ========================================================= */
-
-function renderViolations() {
-  const rows =
-    db.violations
-      .slice()
-      .sort(
-        (a, b) =>
-          b.timestamp -
-          a.timestamp
-      );
-
-  $('#admin-violations-page').innerHTML = `
-    <div class="page-head">
-
-      <div>
-        <span class="eyebrow">
-          SECURITY
-        </span>
-
-        <h3>
-          Violation Logs
-        </h3>
-
-        <p>
-          Security events recorded by individual participant sessions.
-        </p>
-      </div>
-
-    </div>
-
-    <div class="panel">
-
-      ${
-        rows.length
-          ? `
-            <div class="table-wrap">
-
-              <table class="data-table">
-
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Participant</th>
-                    <th>Room</th>
-                    <th>Exam</th>
-                    <th>#</th>
-                    <th>Reason</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-
-                  ${rows
-                    .map(
-                      violation => `
-                        <tr>
-
-                          <td>
-                            ${fmtDate(
-                              violation.timestamp
-                            )}
-                          </td>
-
-                          <td>
-                            ${esc(
-                              violation.participantId ||
-                              'Participant'
-                            )}
-                          </td>
-
-                          <td>
-                            ${esc(
-                              violation.roomNumber ||
-                              '—'
-                            )}
-                          </td>
-
-                          <td>
-                            ${esc(
-                              violation.examTitle ||
-                              '—'
-                            )}
-                          </td>
-
-                          <td>
-                            ${violation.number}
-                          </td>
-
-                          <td>
-                            ${esc(
-                              violation.reason
-                            )}
-                          </td>
-
-                        </tr>
-                      `
-                    )
-                    .join('')}
-
-                </tbody>
-
-              </table>
-
-            </div>
-          `
-          : `
-            <div class="empty">
-              No violations logged yet.
-            </div>
-          `
-      }
-
-    </div>
-  `;
-}
-
-/* =========================================================
-   ANALYTICS
-   ========================================================= */
-
-function renderAnalytics() {
-  const counts =
-    attemptCounts();
-
-  const total =
-    counts.total || 1;
-
-  const average =
-    db.attempts.length
-      ? (
-          db.attempts.reduce(
-            (sum, attempt) =>
-              sum +
-              (attempt.violations || 0),
-            0
-          ) /
-          db.attempts.length
-        ).toFixed(2)
-      : '0.00';
-
-  const roomStats =
-    db.rooms
-      .map(room => ({
-        room,
-
-        count:
-          db.attempts.filter(
-            attempt =>
-              attempt.roomId ===
-              room.id
-          ).length
-      }))
-      .sort(
-        (a, b) =>
-          b.count - a.count
-      );
-
-  $('#admin-analytics-page').innerHTML = `
-    <div class="page-head">
-
-      <div>
-        <span class="eyebrow">
-          REPORTING
-        </span>
-
-        <h3>
-          Analytics
-        </h3>
-
-        <p>
-          Overall examination activity and security statistics.
-        </p>
-      </div>
-
-    </div>
-
-    <div class="kpi-grid">
-
-      ${kpi(
-        'Completion Rate',
-        Math.round(
-          counts.completed /
-          total *
-          100
-        ) + '%'
-      )}
-
-      ${kpi(
-        'Active Sessions',
-        counts.inProgress
-      )}
-
-      ${kpi(
-        'Termination Rate',
-        Math.round(
-          counts.terminated /
-          total *
-          100
-        ) + '%'
-      )}
-
-      ${kpi(
-        'Avg. Violations',
-        average
-      )}
-
-    </div>
-
-    <div class="grid-2">
-
-      <div class="panel">
-
-        <h3>
-          Session Status
-        </h3>
-
-        ${[
-          ['Completed', counts.completed],
-          ['In Progress', counts.inProgress],
-          ['Time Expired', counts.expired],
-          ['Terminated', counts.terminated]
-        ]
-          .map(
-            ([label, number]) =>
-              chart(
-                label,
-                number,
-                counts.total
-              )
-          )
-          .join('')}
-
-      </div>
-
-      <div class="panel">
-
-        <h3>
-          Sessions by Room
-        </h3>
-
-        ${
-          roomStats.length
-            ? roomStats
-                .map(
-                  item =>
-                    chart(
-                      item.room.roomNumber,
-                      item.count,
-                      counts.total
-                    )
-                )
-                .join('')
-            : `
-              <div class="empty">
-                No rooms available.
-              </div>
-            `
-        }
-
-      </div>
-
-    </div>
-
-    <div
-      class="panel"
-      style="margin-top:18px"
-    >
-
-      <h3>
-        Violation Activity
-      </h3>
-
-      <p
-        class="muted"
-        style="font-size:12px"
-      >
-        ${
-          db.violations.length
-        }
-        security events recorded across
-        ${
-          db.attempts.length
-        }
-        participant sessions.
-      </p>
-
-      <div class="progress-bar">
-
-        <div
-          class="progress-fill"
-          style="width:${Math.min(
-            100,
-            db.violations.length * 5
-          )}%"
-        ></div>
-
-      </div>
-
-    </div>
-  `;
-}
-
-function kpi(label, value) {
-  return `
-    <div class="kpi">
-
-      <span>
-        ${label}
-      </span>
-
-      <strong>
-        ${value}
-      </strong>
-
-    </div>
-  `;
-}
-
-function chart(
-  label,
-  number,
-  total
-) {
-  const percentage =
-    total
-      ? Math.round(
-          number /
-          total *
-          100
-        )
-      : 0;
-
-  return `
-    <div class="chart-row">
-
-      <div>
-
-        <div class="chart-label">
-          ${esc(label)}
+        <div class="room-status-icon">
+          +
         </div>
 
-        <div class="bar-track">
+        <div class="room-status-info">
 
-          <div
-            class="bar-value"
-            style="width:${percentage}%"
-          ></div>
-
-        </div>
-
-      </div>
-
-      <div class="chart-number">
-        ${number}
-        (${percentage}%)
-      </div>
-
-    </div>
-  `;
-}
-
-/* =========================================================
-   SETTINGS
-   ========================================================= */
-
-function renderSettings() {
-  const user =
-    currentUser();
-
-  $('#admin-settings-page').innerHTML = `
-    <div class="page-head">
-
-      <div>
-        <span class="eyebrow">
-          SYSTEM
-        </span>
-
-        <h3>
-          Settings
-        </h3>
-
-        <p>
-          Portal configuration and prototype data.
-        </p>
-      </div>
-
-    </div>
-
-    <div class="grid-2">
-
-      <div class="panel">
-
-        <h3>
-          Theme
-        </h3>
-
-        <p
-          class="muted"
-          style="font-size:12px"
-        >
-          Current theme:
           <strong>
-            ${db.theme}
+            ${esc(room.title)}
           </strong>
-        </p>
 
-        <button
-          class="secondary-btn"
-          data-action="toggle-theme"
-        >
-          Switch Theme
-        </button>
+          <span>
+            Room ${esc(room.roomNumber)}
+            • ${sessions} session${sessions === 1 ? '' : 's'}
+          </span>
 
-      </div>
+        </div>
 
-      <div class="panel">
-
-        <h3>
-          Prototype Data
-        </h3>
-
-        <p
-          class="muted"
-          style="font-size:12px"
-        >
-          Rooms, submissions and violation records are stored in this browser.
-        </p>
-
-        <button
-          class="danger-btn"
-          data-action="reset-demo"
-        >
-          Reset Demo Data
-        </button>
+        <span class="status-pill ${
+          availability.status === 'Available'
+            ? 'success'
+            : 'muted'
+        }">
+          ${
+            availability.status === 'Available'
+              ? 'AVAILABLE'
+              : 'UNAVAILABLE'
+          }
+        </span>
 
       </div>
+    `;
+  }
 
-    </div>
 
-    <div
-      class="panel"
-      style="margin-top:18px"
-    >
+  function submissionTable(rows) {
+    if (!rows.length) {
+      return `
+        <div class="empty">
+          No examination sessions recorded yet.
+        </div>
+      `;
+    }
 
-      <h3>
-        Administrator Account
-      </h3>
 
+    return `
       <div class="table-wrap">
 
         <table class="data-table">
 
           <thead>
+
             <tr>
-              <th>
-                Username
-              </th>
-
-              <th>
-                Name
-              </th>
-
-              <th>
-                Role
-              </th>
+              <th>Participant</th>
+              <th>Room</th>
+              <th>Examination</th>
+              <th>Started</th>
+              <th>Status</th>
+              <th>Security</th>
             </tr>
+
           </thead>
 
           <tbody>
 
-            <tr>
+            ${rows.map(attempt => `
+              <tr>
 
-              <td>
-                ${esc(
-                  user?.username ||
-                  'admin'
-                )}
-              </td>
+                <td>
+                  <strong>
+                    ${esc(
+                      attempt.participantLabel ||
+                      'Participant'
+                    )}
+                  </strong>
+                </td>
 
-              <td>
-                ${esc(
-                  user?.name ||
-                  'Administrator'
-                )}
-              </td>
+                <td>
+                  <span class="room-code">
+                    ${esc(
+                      attempt.roomNumber || '—'
+                    )}
+                  </span>
+                </td>
 
-              <td>
-                Administrator
-              </td>
+                <td>
+                  ${esc(
+                    attempt.examTitle || '—'
+                  )}
+                </td>
 
-            </tr>
+                <td>
+                  ${fmtDate(attempt.startedAt)}
+                </td>
+
+                <td>
+                  ${badge(attempt.status)}
+                </td>
+
+                <td>
+                  <span class="${
+                    (attempt.violations || 0) > 0
+                      ? 'security-count danger'
+                      : 'security-count'
+                  }">
+                    ${attempt.violations || 0}
+                  </span>
+                </td>
+
+              </tr>
+            `).join('')}
 
           </tbody>
 
         </table>
 
       </div>
-
-    </div>
-
-    <div
-      class="panel"
-      style="margin-top:18px"
-    >
-
-      <h3>
-        Production Note
-      </h3>
-
-      <div class="notice danger-notice">
-
-        Do not use client-side passwords,
-        localStorage authentication or
-        client-side attempt records as a
-        production authentication system.
-
-        Move credentials, rooms,
-        availability, sessions, timers and
-        violation logs to a server-side
-        database/API.
-
-      </div>
-
-    </div>
-  `;
-
-  bindActions();
-}
-
-/* =========================================================
-   PARTICIPANT / ROOM DASHBOARD
-   ========================================================= */
-
-function openRoomDashboard() {
-  const room =
-    db.rooms.find(
-      item =>
-        item.id ===
-        session?.roomId
-    );
-
-  if (!room) {
-    logout();
-    return;
-  }
-
-  currentRoom =
-    clone(room);
-
-  showView('room');
-
-  renderRoomDashboard();
-}
-
-function renderRoomDashboard() {
-  const room =
-    currentRoom;
-
-  if (!room) {
-    logout();
-    return;
-  }
-
-  const availability =
-    getAvailability(room);
-
-  const myAttempts =
-    db.attempts.filter(
-      attempt =>
-        attempt.participantId ===
-        session.participantId
-    );
-
-  const activeAttempt =
-    myAttempts.find(
-      attempt =>
-        attempt.status ===
-        'In Progress'
-    );
-
-  const completedCount =
-    myAttempts.filter(
-      attempt =>
-        [
-          'Completed',
-          'Time Expired',
-          'Terminated'
-        ].includes(
-          attempt.status
-        )
-    ).length;
-
-  $('#room-user-name').textContent =
-    'Participant';
-
-  $('#room-avatar').textContent =
-    'P';
-
-  $('#room-number-display').textContent =
-    room.roomNumber;
-
-  $('#room-exam-title').textContent =
-    room.title;
-
-  $('#room-exam-description').textContent =
-    room.description ||
-    'Online examination';
-
-  $('#room-status').innerHTML =
-    badge(
-      availability.status
-    );
-
-  $('#room-duration').textContent =
-    room.timerEnabled
-      ? `${room.durationMinutes} minutes`
-      : 'No timer';
-
-  $('#room-anticheat').textContent =
-    room.antiCheat
-      ? 'Enabled'
-      : 'Disabled';
-
-  $('#room-submissions-count').textContent =
-    completedCount;
-
-  $('#room-session-id').textContent =
-    session.participantId;
-
-  const action =
-    $('#room-exam-action');
-
-  if (!action) return;
-
-  if (
-    activeAttempt &&
-    availability.status === 'Available'
-  ) {
-    action.innerHTML = `
-      <button
-        class="primary-btn"
-        data-action="resume-exam"
-      >
-        Resume Exam
-      </button>
-    `;
-  } else if (
-    availability.status === 'Available'
-  ) {
-    action.innerHTML = `
-      <button
-        class="primary-btn"
-        data-action="start-room-exam"
-      >
-        Start Exam
-      </button>
-    `;
-  } else {
-    action.innerHTML = `
-      <button
-        class="secondary-btn"
-        disabled
-      >
-        Exam Not Available
-      </button>
     `;
   }
 
-  bindActions();
-}
 
-/* =========================================================
-   START ROOM EXAM
-   ========================================================= */
+  function badge(status) {
+    const colors = {
+      'Completed': 'green',
+      'Time Expired': 'yellow',
+      'Terminated': 'red',
+      'In Progress': 'blue',
+      'Available': 'green',
+      'Unavailable': 'gray'
+    };
 
-function startRoomExam() {
-  if (!currentRoom) return;
-
-  const availability =
-    getAvailability(
-      currentRoom
-    );
-
-  if (
-    availability.status !==
-    'Available'
-  ) {
-    toast(
-      'This examination is not currently available.',
-      'error'
-    );
-
-    return;
+    return `
+      <span class="badge ${
+        colors[status] || 'gray'
+      }">
+        ${esc(status)}
+      </span>
+    `;
   }
 
-  openStartInstructions(
-    currentRoom
-  );
-}
 
-function resumeExistingExam() {
-  if (!currentRoom) return;
+  /* ================================================================
+     EXAM ROOM MANAGEMENT
+  ================================================================ */
 
-  const attempt =
-    db.attempts.find(
-      item =>
-        item.roomId ===
-          currentRoom.id &&
-        item.participantId ===
-          session.participantId &&
-        item.status ===
-          'In Progress'
-    );
+  function renderAdminRooms() {
+    const availableSlots =
+      MAX_EXAMS - db.rooms.length;
 
-  if (!attempt) {
-    startRoomExam();
-    return;
-  }
 
-  beginExamSession(
-    currentRoom,
-    attempt,
-    true
-  );
-}
+    $('#admin-exams-page').innerHTML = `
 
-/* =========================================================
-   START INSTRUCTIONS
-   ========================================================= */
-
-function openStartInstructions(room) {
-  const modal =
-    $('#modal-root');
-
-  if (!modal) return;
-
-  modal.hidden = false;
-
-  modal.innerHTML = `
-    <div
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-    >
-
-      <div class="modal-head">
+      <div class="page-head">
 
         <div>
 
           <span class="eyebrow">
-            EXAM INSTRUCTIONS
+            EXAM MANAGEMENT
+          </span>
+
+          <h3>
+            Examination Rooms
+          </h3>
+
+          <p>
+            Create and manage room-based examinations.
+            Multiple participants can use the same room
+            simultaneously.
+          </p>
+
+          <div class="slot-note">
+            ${db.rooms.length} / ${MAX_EXAMS}
+            rooms configured
+          </div>
+
+        </div>
+
+
+        <div class="actions">
+
+          <button
+            class="primary-btn compact"
+            data-action="new-exam"
+            ${availableSlots <= 0 ? 'disabled' : ''}>
+            + Create Room
+          </button>
+
+        </div>
+
+      </div>
+
+
+      ${
+        db.rooms.length
+          ? `
+            <div class="exam-grid">
+              ${db.rooms
+                .map(examCard)
+                .join('')}
+            </div>
+          `
+          : `
+            <div class="panel empty-panel">
+              <div class="empty">
+                No examination rooms have been created.
+              </div>
+            </div>
+          `
+      }
+
+    `;
+
+    bindActions();
+  }
+
+
+  function examCard(room) {
+    const availability =
+      getAvailability(room);
+
+    const attempts =
+      db.attempts.filter(
+        attempt =>
+          attempt.examId === room.id
+      );
+
+
+    const activeSessions =
+      attempts.filter(
+        attempt =>
+          attempt.status ===
+          'In Progress'
+      ).length;
+
+
+    return `
+
+      <article class="exam-card redesigned">
+
+        <div class="exam-card-top">
+
+          <div class="room-number-display">
+            ROOM ${esc(room.roomNumber)}
+          </div>
+
+          <span class="status-pill ${
+            availability.status === 'Available'
+              ? 'success'
+              : 'muted'
+          }">
+            ${
+              availability.status === 'Available'
+                ? 'ACTIVE'
+                : 'UNAVAILABLE'
+            }
+          </span>
+
+        </div>
+
+
+        <div class="exam-card-title">
+
+          <h3>
+            ${esc(room.title)}
+          </h3>
+
+          <p>
+            ${esc(
+              room.description ||
+              'No description provided.'
+            )}
+          </p>
+
+        </div>
+
+
+        <div class="room-access-display">
+
+          <span>
+            PASSCODE
+          </span>
+
+          <strong>
+            ${esc(room.passcode)}
+          </strong>
+
+        </div>
+
+
+        <div class="exam-meta">
+
+          <div class="meta-box">
+            <span>Timer</span>
+
+            <strong>
+              ${
+                room.timerEnabled
+                  ? `${room.durationMinutes} min`
+                  : 'Off'
+              }
+            </strong>
+          </div>
+
+
+          <div class="meta-box">
+            <span>Anti-cheat</span>
+
+            <strong>
+              ${
+                room.antiCheat
+                  ? 'Enabled'
+                  : 'Disabled'
+              }
+            </strong>
+          </div>
+
+
+          <div class="meta-box">
+            <span>Live</span>
+
+            <strong>
+              ${activeSessions}
+            </strong>
+          </div>
+
+
+          <div class="meta-box">
+            <span>Total Sessions</span>
+
+            <strong>
+              ${attempts.length}
+            </strong>
+          </div>
+
+        </div>
+
+
+        <div class="exam-card-actions">
+
+          <button
+            class="secondary-btn"
+            data-action="edit-exam"
+            data-id="${room.id}">
+            Edit Room
+          </button>
+
+          <button
+            class="danger-btn"
+            data-action="delete-exam"
+            data-id="${room.id}">
+            Delete
+          </button>
+
+        </div>
+
+      </article>
+
+    `;
+  }
+
+
+  /* ================================================================
+     EXAM EDITOR
+  ================================================================ */
+
+  function openExamModal(id = null) {
+
+    const room =
+      id
+        ? db.rooms.find(
+            item => item.id === id
+          )
+        : null;
+
+
+    if (
+      !room &&
+      db.rooms.length >= MAX_EXAMS
+    ) {
+      toast(
+        `Maximum of ${MAX_EXAMS} examination rooms reached.`,
+        'error'
+      );
+
+      return;
+    }
+
+
+    const data =
+      room || {
+        roomNumber: '',
+        passcode: '',
+        title: '',
+        description: '',
+        formUrl: '',
+        antiCheat: true,
+        maxViolations: 3,
+        timerEnabled: true,
+        durationMinutes: 60,
+        startAt: '',
+        endAt: '',
+        active: true
+      };
+
+
+    const isoLocal = value => {
+      if (!value) return '';
+
+      try {
+        return new Date(value)
+          .toISOString()
+          .slice(0, 16);
+      } catch {
+        return '';
+      }
+    };
+
+
+    $('#modal-root').hidden = false;
+
+
+    $('#modal-root').innerHTML = `
+
+      <div
+        class="modal modal-large"
+        role="dialog"
+        aria-modal="true">
+
+        <div class="modal-head">
+
+          <div>
+
+            <span class="eyebrow">
+              ${
+                room
+                  ? 'EDIT EXAMINATION ROOM'
+                  : 'CREATE EXAMINATION ROOM'
+              }
+            </span>
+
+            <h3>
+              ${
+                room
+                  ? 'Update Examination Room'
+                  : 'Create New Examination Room'
+              }
+            </h3>
+
+            <p class="modal-head-description">
+              Configure all examination access,
+              scheduling and security settings.
+            </p>
+
+          </div>
+
+
+          <!-- FIXED CLOSE BUTTON -->
+          <button
+            class="close-btn"
+            type="button"
+            data-action="close-modal"
+            aria-label="Close editor">
+            ×
+          </button>
+
+        </div>
+
+
+        <!--
+          IMPORTANT:
+          modal-body is independently scrollable.
+          This prevents the editor from being cut off on
+          smaller displays.
+        -->
+
+        <form
+          id="exam-form"
+          class="modal-form">
+
+          <div class="modal-body editor-scroll">
+
+            <div class="editor-section">
+
+              <div class="editor-section-title">
+                <span>01</span>
+                Room &amp; Examination
+              </div>
+
+
+              <div class="form-grid">
+
+                <div class="field">
+
+                  <label class="form-label">
+                    Room Number
+                  </label>
+
+                  <input
+                    name="roomNumber"
+                    required
+                    value="${esc(data.roomNumber)}"
+                    placeholder="e.g. 1001">
+
+                  <div class="helper">
+                    Participants use this number to enter
+                    the examination room.
+                  </div>
+
+                </div>
+
+
+                <div class="field">
+
+                  <label class="form-label">
+                    Room Passcode
+                  </label>
+
+                  <input
+                    name="passcode"
+                    required
+                    value="${esc(data.passcode)}"
+                    placeholder="e.g. 123456">
+
+                  <div class="helper">
+                    Share this passcode only with authorized
+                    examination participants.
+                  </div>
+
+                </div>
+
+
+                <div class="field full-span">
+
+                  <label class="form-label">
+                    Examination Title
+                  </label>
+
+                  <input
+                    name="title"
+                    required
+                    value="${esc(data.title)}"
+                    placeholder="e.g. HR Certification Examination">
+
+                </div>
+
+
+                <div class="field full-span">
+
+                  <label class="form-label">
+                    Description
+                  </label>
+
+                  <textarea
+                    name="description"
+                    rows="4"
+                    placeholder="Provide a short professional description of the examination.">${esc(data.description)}</textarea>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <div class="editor-section">
+
+              <div class="editor-section-title">
+                <span>02</span>
+                Examination Form
+              </div>
+
+
+              <div class="form-grid">
+
+                <div class="field full-span">
+
+                  <label class="form-label">
+                    Google Forms Link
+                  </label>
+
+                  <input
+                    name="formUrl"
+                    type="url"
+                    required
+                    value="${esc(data.formUrl)}"
+                    placeholder="https://docs.google.com/forms/d/.../viewform?embedded=true">
+
+                  <div class="helper">
+                    Use the Google Form's embeddable
+                    viewform URL.
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <div class="editor-section">
+
+              <div class="editor-section-title">
+                <span>03</span>
+                Examination Controls
+              </div>
+
+
+              <div class="form-grid">
+
+                <div class="field">
+
+                  <label class="form-label">
+                    Maximum Security Events
+                  </label>
+
+                  <input
+                    name="maxViolations"
+                    type="number"
+                    min="1"
+                    max="99"
+                    required
+                    value="${data.maxViolations}">
+
+                </div>
+
+
+                <div class="field">
+
+                  <label class="form-label">
+                    Timer Duration
+                  </label>
+
+                  <input
+                    name="durationMinutes"
+                    type="number"
+                    min="1"
+                    max="1440"
+                    required
+                    value="${data.durationMinutes}">
+
+                  <div class="helper">
+                    Duration is used when the examination
+                    timer is enabled.
+                  </div>
+
+                </div>
+
+
+                <div class="field full-span">
+
+                  <div class="setting-card">
+
+                    <div class="setting-copy">
+
+                      <strong>
+                        Anti-cheat Monitoring
+                      </strong>
+
+                      <span>
+                        Monitor common tab switching,
+                        focus loss, fullscreen exits and
+                        restricted shortcuts.
+                      </span>
+
+                    </div>
+
+                    <label class="switch">
+
+                      <input
+                        id="antiCheat"
+                        name="antiCheat"
+                        type="checkbox"
+                        ${data.antiCheat ? 'checked' : ''}>
+
+                      <span class="switch-slider"></span>
+
+                    </label>
+
+                  </div>
+
+                </div>
+
+
+                <div class="field full-span">
+
+                  <div class="setting-card">
+
+                    <div class="setting-copy">
+
+                      <strong>
+                        Examination Timer
+                      </strong>
+
+                      <span id="timer-setting-status">
+                        ${
+                          data.timerEnabled
+                            ? `Timer enabled • ${data.durationMinutes} minutes`
+                            : 'Timer disabled'
+                        }
+                      </span>
+
+                    </div>
+
+                    <label class="switch">
+
+                      <input
+                        id="timerEnabled"
+                        name="timerEnabled"
+                        type="checkbox"
+                        ${data.timerEnabled ? 'checked' : ''}>
+
+                      <span class="switch-slider"></span>
+
+                    </label>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <div class="editor-section">
+
+              <div class="editor-section-title">
+                <span>04</span>
+                Availability Schedule
+              </div>
+
+
+              <div class="form-grid">
+
+                <div class="field">
+
+                  <label class="form-label">
+                    Available From
+                  </label>
+
+                  <input
+                    name="startAt"
+                    type="datetime-local"
+                    value="${isoLocal(data.startAt)}">
+
+                  <div class="helper">
+                    Leave blank to make the room available
+                    immediately.
+                  </div>
+
+                </div>
+
+
+                <div class="field">
+
+                  <label class="form-label">
+                    Available Until
+                  </label>
+
+                  <input
+                    name="endAt"
+                    type="datetime-local"
+                    value="${isoLocal(data.endAt)}">
+
+                  <div class="helper">
+                    Leave blank for no expiration.
+                  </div>
+
+                </div>
+
+
+                <div class="field full-span">
+
+                  <div class="setting-card">
+
+                    <div class="setting-copy">
+
+                      <strong>
+                        Room Availability
+                      </strong>
+
+                      <span>
+                        Allow participants to enter this
+                        examination room.
+                      </span>
+
+                    </div>
+
+                    <label class="switch">
+
+                      <input
+                        id="active"
+                        name="active"
+                        type="checkbox"
+                        ${data.active ? 'checked' : ''}>
+
+                      <span class="switch-slider"></span>
+
+                    </label>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <div class="editor-section editor-final-note">
+
+              <div class="notice">
+
+                <strong>
+                  Room-Based Access
+                </strong>
+
+                <p>
+                  Multiple participants may enter this
+                  examination room at the same time.
+                  Each participant receives an independent
+                  session and can submit the examination
+                  without affecting other participants.
+                </p>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <div class="modal-footer">
+
+            <button
+              type="button"
+              class="secondary-btn"
+              data-action="close-modal">
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              class="primary-btn">
+              ${
+                room
+                  ? 'Save Changes'
+                  : 'Create Examination Room'
+              }
+            </button>
+
+          </div>
+
+        </form>
+
+      </div>
+
+    `;
+
+
+    const timerToggle =
+      $('#timerEnabled');
+
+    const timerStatus =
+      $('#timer-setting-status');
+
+    const durationInput =
+      $('#exam-form')
+        ?.elements
+        ?.namedItem('durationMinutes');
+
+
+    timerToggle?.addEventListener(
+      'change',
+      () => {
+
+        if (!timerStatus) return;
+
+        if (timerToggle.checked) {
+
+          const minutes =
+            Math.max(
+              1,
+              Number(
+                durationInput?.value
+              ) || 60
+            );
+
+          timerStatus.textContent =
+            `Timer enabled • ${minutes} minutes`;
+
+        } else {
+
+          timerStatus.textContent =
+            'Timer disabled';
+
+        }
+
+      }
+    );
+
+
+    $('#exam-form')?.addEventListener(
+      'submit',
+      saveExamFromModal
+    );
+
+
+    /*
+     * Scroll to the top when the editor opens.
+     */
+    setTimeout(() => {
+      $('.editor-scroll')?.scrollTo({
+        top: 0,
+        behavior: 'instant'
+      });
+    }, 10);
+  }
+
+
+  function saveExamFromModal(event) {
+    event.preventDefault();
+
+    const form =
+      event.currentTarget;
+
+    const data =
+      new FormData(form);
+
+
+    const roomNumber =
+      String(
+        data.get('roomNumber') || ''
+      ).trim();
+
+
+    const passcode =
+      String(
+        data.get('passcode') || ''
+      ).trim();
+
+
+    const title =
+      String(
+        data.get('title') || ''
+      ).trim();
+
+
+    const description =
+      String(
+        data.get('description') || ''
+      ).trim();
+
+
+    const formUrl =
+      String(
+        data.get('formUrl') || ''
+      ).trim();
+
+
+    if (
+      !roomNumber ||
+      !passcode ||
+      !title ||
+      !formUrl
+    ) {
+      toast(
+        'Please complete all required fields.',
+        'error'
+      );
+
+      return;
+    }
+
+
+    if (
+      !/^https:\/\/(docs\.google\.com|forms\.google\.com)\//i
+        .test(formUrl)
+    ) {
+      toast(
+        'Please enter a valid Google Forms URL.',
+        'error'
+      );
+
+      return;
+    }
+
+
+    /*
+     * Prevent duplicate room numbers.
+     */
+    const currentId =
+      form.dataset.editingId || null;
+
+
+    const duplicate =
+      db.rooms.find(
+        room =>
+          room.roomNumber.toLowerCase() ===
+            roomNumber.toLowerCase() &&
+          room.id !== currentId
+      );
+
+
+    if (duplicate) {
+      toast(
+        'That room number is already in use.',
+        'error'
+      );
+
+      return;
+    }
+
+
+    const durationMinutes =
+      Math.max(
+        1,
+        Math.round(
+          Number(
+            data.get('durationMinutes')
+          ) || 60
+        )
+      );
+
+
+    const roomData = {
+
+      roomNumber,
+
+      passcode,
+
+      title,
+
+      description,
+
+      formUrl,
+
+      antiCheat:
+        $('#antiCheat')?.checked === true,
+
+      maxViolations:
+        Math.max(
+          1,
+          Math.round(
+            Number(
+              data.get('maxViolations')
+            ) || 3
+          )
+        ),
+
+      timerEnabled:
+        $('#timerEnabled')?.checked === true,
+
+      durationMinutes,
+
+      startAt:
+        data.get('startAt')
+          ? new Date(
+              data.get('startAt')
+            ).toISOString()
+          : '',
+
+      endAt:
+        data.get('endAt')
+          ? new Date(
+              data.get('endAt')
+            ).toISOString()
+          : '',
+
+      active:
+        $('#active')?.checked === true
+    };
+
+
+    if (currentId) {
+
+      const room =
+        db.rooms.find(
+          item => item.id === currentId
+        );
+
+      if (room) {
+        Object.assign(
+          room,
+          roomData
+        );
+      }
+
+    } else {
+
+      db.rooms.push({
+        id: uid('room'),
+        ...roomData,
+        createdAt: Date.now(),
+        createdBy: 'u-admin'
+      });
+
+    }
+
+
+    saveDB();
+
+    closeModal();
+
+    renderAdminRooms();
+
+    toast(
+      currentId
+        ? 'Examination room updated successfully.'
+        : 'Examination room created successfully.',
+      'success'
+    );
+  }
+
+
+  function deleteExam(id) {
+    const room =
+      db.rooms.find(
+        item => item.id === id
+      );
+
+    if (!room) return;
+
+
+    const sessions =
+      db.attempts.filter(
+        attempt =>
+          attempt.examId === id
+      ).length;
+
+
+    if (
+      !confirm(
+        `Delete "${room.title}"?\n\n` +
+        `Room ${room.roomNumber}\n\n` +
+        `${sessions} historical session(s) will remain in reports.`
+      )
+    ) {
+      return;
+    }
+
+
+    db.rooms =
+      db.rooms.filter(
+        item => item.id !== id
+      );
+
+
+    saveDB();
+
+    renderAdminRooms();
+
+    toast(
+      'Examination room deleted.',
+      'success'
+    );
+  }
+
+
+  /* ================================================================
+     MODALS
+  ================================================================ */
+
+  function closeModal() {
+    const root =
+      $('#modal-root');
+
+    if (!root) return;
+
+    root.hidden = true;
+    root.innerHTML = '';
+  }
+
+
+  function closeAnyModal() {
+    closeModal();
+    closeAdminLogin();
+  }
+
+
+  /*
+   * IMPORTANT:
+   * One global delegated handler handles ALL dynamically generated
+   * close/cancel buttons.
+   *
+   * This fixes the previous problem where newly generated buttons
+   * were sometimes not bound.
+   */
+  function bindActions() {
+    // No individual dynamic listeners are required.
+  }
+
+
+  document.addEventListener(
+    'click',
+    event => {
+
+      const button =
+        event.target.closest(
+          '[data-action]'
+        );
+
+
+      if (!button) return;
+
+
+      const action =
+        button.dataset.action;
+
+      const id =
+        button.dataset.id;
+
+
+      switch (action) {
+
+        case 'new-exam':
+          openExamModal();
+          break;
+
+        case 'edit-exam':
+          openExamModal(id);
+          break;
+
+        case 'delete-exam':
+          deleteExam(id);
+          break;
+
+        case 'close-modal':
+          closeModal();
+          break;
+
+        case 'close-admin-login':
+          closeAdminLogin();
+          break;
+
+        case 'confirm-start':
+          confirmStart(id);
+          break;
+
+        case 'start-exam':
+          startExam(id);
+          break;
+
+        case 'view-submissions':
+          adminPage('submissions');
+          break;
+
+        case 'refresh-admin':
+          db = loadDB();
+          renderAdminPage(
+            Object.keys(ADMIN_PAGE_TITLES)
+              .find(
+                key =>
+                  $(`#admin-${key}-page`)
+                    ?.classList
+                    .contains('active')
+              ) || 'dashboard'
+          );
+          break;
+
+        case 'toggle-theme':
+          toggleTheme();
+          break;
+
+        case 'reset-demo':
+          resetDemo();
+          break;
+
+        case 'delete-user':
+          deleteUser(id);
+          break;
+
+      }
+
+    }
+  );
+
+
+  /*
+   * Close modal by clicking the dark backdrop.
+   */
+  document.addEventListener(
+    'click',
+    event => {
+
+      if (
+        event.target ===
+        $('#modal-root')
+      ) {
+        closeModal();
+      }
+
+
+      if (
+        event.target ===
+        $('#admin-login-modal')
+      ) {
+        closeAdminLogin();
+      }
+
+    }
+  );
+
+
+  /*
+   * Escape closes dialogs.
+   */
+  document.addEventListener(
+    'keydown',
+    event => {
+
+      if (event.key !== 'Escape') return;
+
+      closeModal();
+      closeAdminLogin();
+
+    }
+  );
+
+
+  /* ================================================================
+     ADMIN SUBMISSIONS
+  ================================================================ */
+
+  function renderSubmissions() {
+    const sorted =
+      db.attempts
+        .slice()
+        .sort(
+          (a, b) =>
+            (b.startedAt || 0) -
+            (a.startedAt || 0)
+        );
+
+
+    $('#admin-submissions-page').innerHTML = `
+
+      <div class="page-head">
+
+        <div>
+
+          <span class="eyebrow">
+            MONITORING
+          </span>
+
+          <h3>
+            Examination Submissions
+          </h3>
+
+          <p>
+            Every participant session is recorded
+            independently, including multiple submissions
+            from the same examination room.
+          </p>
+
+        </div>
+
+
+        <div class="actions">
+
+          <button
+            class="secondary-btn"
+            data-action="refresh-admin">
+            ↻ Refresh
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <div class="panel">
+
+        ${submissionTable(sorted)}
+
+      </div>
+
+    `;
+
+    bindActions();
+  }
+
+
+  /* ================================================================
+     VIOLATIONS
+  ================================================================ */
+
+  function renderViolations() {
+
+    const rows =
+      db.violations
+        .slice()
+        .sort(
+          (a, b) =>
+            b.timestamp - a.timestamp
+        );
+
+
+    $('#admin-violations-page').innerHTML = `
+
+      <div class="page-head">
+
+        <div>
+
+          <span class="eyebrow">
+            SECURITY
+          </span>
+
+          <h3>
+            Security Activity
+          </h3>
+
+          <p>
+            Review security events recorded during
+            active examination sessions.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="panel">
+
+        ${
+          rows.length
+            ? `
+              <div class="table-wrap">
+
+                <table class="data-table">
+
+                  <thead>
+
+                    <tr>
+                      <th>Time</th>
+                      <th>Room</th>
+                      <th>Examination</th>
+                      <th>Participant</th>
+                      <th>Event</th>
+                      <th>Reason</th>
+                    </tr>
+
+                  </thead>
+
+                  <tbody>
+
+                    ${rows.map(v => `
+
+                      <tr>
+
+                        <td>
+                          ${fmtDate(v.timestamp)}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            v.roomNumber || '—'
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            v.examTitle || '—'
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            v.participantLabel ||
+                            'Participant'
+                          )}
+                        </td>
+
+                        <td>
+                          <span class="security-count danger">
+                            #${v.number}
+                          </span>
+                        </td>
+
+                        <td>
+                          ${esc(v.reason)}
+                        </td>
+
+                      </tr>
+
+                    `).join('')}
+
+                  </tbody>
+
+                </table>
+
+              </div>
+            `
+            : `
+              <div class="empty">
+                No security events have been recorded.
+              </div>
+            `
+        }
+
+      </div>
+
+    `;
+  }
+
+
+  /* ================================================================
+     ANALYTICS
+  ================================================================ */
+
+  function renderAnalytics() {
+    const counts =
+      attemptCounts();
+
+    const total =
+      counts.total || 1;
+
+
+    const average =
+      db.attempts.length
+        ? (
+            db.attempts.reduce(
+              (sum, item) =>
+                sum +
+                (item.violations || 0),
+              0
+            ) /
+            db.attempts.length
+          ).toFixed(2)
+        : '0.00';
+
+
+    const completion =
+      Math.round(
+        counts.completed /
+        total *
+        100
+      );
+
+
+    $('#admin-analytics-page').innerHTML = `
+
+      <div class="page-head">
+
+        <div>
+
+          <span class="eyebrow">
+            REPORTING
+          </span>
+
+          <h3>
+            Examination Analytics
+          </h3>
+
+          <p>
+            High-level examination activity and
+            security monitoring.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="kpi-grid">
+
+        ${kpi(
+          'Completion Rate',
+          completion + '%'
+        )}
+
+        ${kpi(
+          'Sessions',
+          counts.total
+        )}
+
+        ${kpi(
+          'Active Sessions',
+          counts.inProgress
+        )}
+
+        ${kpi(
+          'Average Security Events',
+          average
+        )}
+
+      </div>
+
+
+      <div class="dashboard-grid">
+
+        <div class="panel">
+
+          <div class="panel-heading">
+
+            <div>
+              <span class="eyebrow">
+                SESSION STATUS
+              </span>
+
+              <h3>
+                Examination Outcomes
+              </h3>
+            </div>
+
+          </div>
+
+
+          ${chart(
+            'Completed',
+            counts.completed,
+            counts.total
+          )}
+
+          ${chart(
+            'In Progress',
+            counts.inProgress,
+            counts.total
+          )}
+
+          ${chart(
+            'Time Expired',
+            counts.expired,
+            counts.total
+          )}
+
+          ${chart(
+            'Terminated',
+            counts.terminated,
+            counts.total
+          )}
+
+        </div>
+
+
+        <div class="panel">
+
+          <div class="panel-heading">
+
+            <div>
+              <span class="eyebrow">
+                ROOM ACTIVITY
+              </span>
+
+              <h3>
+                Sessions by Room
+              </h3>
+            </div>
+
+          </div>
+
+
+          ${
+            db.rooms.length
+              ? db.rooms
+                  .map(room => {
+
+                    const count =
+                      db.attempts.filter(
+                        a =>
+                          a.examId === room.id
+                      ).length;
+
+                    return chart(
+                      `Room ${room.roomNumber}`,
+                      count,
+                      counts.total
+                    );
+
+                  })
+                  .join('')
+              : `
+                <div class="empty">
+                  No examination rooms.
+                </div>
+              `
+          }
+
+        </div>
+
+      </div>
+
+    `;
+
+    bindActions();
+  }
+
+
+  function kpi(label, value) {
+    return `
+      <div class="kpi">
+
+        <span>
+          ${esc(label)}
+        </span>
+
+        <strong>
+          ${value}
+        </strong>
+
+      </div>
+    `;
+  }
+
+
+  function chart(label, number, total) {
+    const percentage =
+      total
+        ? Math.round(
+            number /
+            total *
+            100
+          )
+        : 0;
+
+
+    return `
+      <div class="chart-row">
+
+        <div class="chart-main">
+
+          <div class="chart-label">
+            ${esc(label)}
+          </div>
+
+          <div class="bar-track">
+
+            <div
+              class="bar-value"
+              style="width:${percentage}%">
+            </div>
+
+          </div>
+
+        </div>
+
+        <div class="chart-number">
+          ${number}
+          <small>
+            ${percentage}%
+          </small>
+        </div>
+
+      </div>
+    `;
+  }
+
+
+  /* ================================================================
+     SETTINGS
+  ================================================================ */
+
+  function renderSettings() {
+
+    $('#admin-settings-page').innerHTML = `
+
+      <div class="page-head">
+
+        <div>
+
+          <span class="eyebrow">
+            SYSTEM
+          </span>
+
+          <h3>
+            Portal Settings
+          </h3>
+
+          <p>
+            Configure the local prototype environment.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="dashboard-grid">
+
+        <div class="panel">
+
+          <div class="panel-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                APPEARANCE
+              </span>
+
+              <h3>
+                Theme
+              </h3>
+
+            </div>
+
+          </div>
+
+
+          <p class="muted">
+            Current theme:
+            <strong>
+              ${db.theme}
+            </strong>
+          </p>
+
+
+          <button
+            class="secondary-btn"
+            data-action="toggle-theme">
+            Switch Theme
+          </button>
+
+        </div>
+
+
+        <div class="panel">
+
+          <div class="panel-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                DATA
+              </span>
+
+              <h3>
+                Prototype Storage
+              </h3>
+
+            </div>
+
+          </div>
+
+
+          <p class="muted">
+            Rooms, sessions and security logs are
+            currently stored in this browser's
+            localStorage.
+          </p>
+
+
+          <button
+            class="danger-btn"
+            data-action="reset-demo">
+            Reset Prototype Data
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <div class="panel production-panel">
+
+        <span class="eyebrow">
+          PRODUCTION NOTICE
+        </span>
+
+        <h3>
+          Client-Side Prototype
+        </h3>
+
+        <div class="notice danger-notice">
+
+          <strong>
+            Important
+          </strong>
+
+          <p>
+            This prototype stores examination data,
+            room passcodes and security logs locally
+            in the browser. For production deployment,
+            authentication, examination access,
+            participant sessions, timers and security
+            records should be moved to a server-side
+            application and database.
+          </p>
+
+        </div>
+
+      </div>
+
+    `;
+
+    bindActions();
+  }
+
+
+  function deleteUser() {
+    /*
+     * Kept for compatibility with older saved data.
+     * Room-based Proctor+ no longer uses participant
+     * accounts.
+     */
+    toast(
+      'Participant accounts are no longer required. Proctor+ uses room-based access.',
+      'info'
+    );
+  }
+
+
+  function resetDemo() {
+
+    if (
+      !confirm(
+        'Reset all Proctor+ rooms, sessions and security logs?'
+      )
+    ) {
+      return;
+    }
+
+
+    db = {
+      users: [
+        {
+          id: 'u-admin',
+          username: ADMIN_USERNAME,
+          password: ADMIN_PASSWORD,
+          role: 'admin',
+          name: 'Administrator'
+        }
+      ],
+
+      rooms: [
+        clone(DEFAULT_ROOM)
+      ],
+
+      attempts: [],
+
+      violations: [],
+
+      theme: 'dark'
+    };
+
+
+    saveDB();
+
+    toast(
+      'Prototype data has been reset.',
+      'success'
+    );
+
+    openAdmin();
+  }
+
+
+  /* ================================================================
+     PARTICIPANT / ROOM DASHBOARD
+  ================================================================ */
+
+  function openParticipantDashboard() {
+
+    const room =
+      db.rooms.find(
+        item =>
+          item.id ===
+          session?.roomId
+      );
+
+
+    if (!room) {
+      logout();
+      return;
+    }
+
+
+    currentRoom =
+      clone(room);
+
+
+    $('#participant-room').textContent =
+      room.roomNumber;
+
+
+    $('#participant-room-status').textContent =
+      getAvailability(room).status ===
+      'Available'
+        ? 'Room is available'
+        : 'Room unavailable';
+
+
+    $('#examiner-user-name').textContent =
+      participantLabel();
+
+
+    $('#examiner-avatar').textContent =
+      'P';
+
+
+    showView('examiner');
+
+    renderParticipantDashboard();
+  }
+
+
+  function renderParticipantDashboard() {
+
+    const room =
+      db.rooms.find(
+        item =>
+          item.id ===
+          session?.roomId
+      );
+
+
+    if (!room) {
+      logout();
+      return;
+    }
+
+
+    currentRoom =
+      clone(room);
+
+
+    const availability =
+      getAvailability(room);
+
+
+    const myAttempts =
+      db.attempts.filter(
+        attempt =>
+          attempt.participantId ===
+          session.participantId
+      );
+
+
+    const completed =
+      myAttempts.filter(
+        attempt =>
+          [
+            'Completed',
+            'Time Expired',
+            'Terminated'
+          ].includes(attempt.status)
+      ).length;
+
+
+    $('#examiner-dashboard-page').innerHTML = `
+
+      <div class="room-dashboard-hero">
+
+        <div>
+
+          <div class="room-welcome">
+            <span class="eyebrow">
+              ROOM ${esc(room.roomNumber)}
+            </span>
+
+            <h3>
+              Welcome to the Examination Room
+            </h3>
+
+            <p>
+              You are connected to
+              <strong>${esc(room.title)}</strong>.
+              Review the examination information below
+              before starting.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div class="room-live-status">
+
+          <span class="status-dot"></span>
+
+          ${
+            availability.status ===
+            'Available'
+              ? 'Room Available'
+              : 'Room Unavailable'
+          }
+
+        </div>
+
+      </div>
+
+
+      <div class="participant-stat-grid">
+
+        <div class="participant-stat">
+
+          <span>
+            EXAMINATION
+          </span>
+
+          <strong>
+            ${esc(room.title)}
+          </strong>
+
+        </div>
+
+
+        <div class="participant-stat">
+
+          <span>
+            DURATION
+          </span>
+
+          <strong>
+            ${
+              room.timerEnabled
+                ? `${room.durationMinutes} minutes`
+                : 'No Timer'
+            }
+          </strong>
+
+        </div>
+
+
+        <div class="participant-stat">
+
+          <span>
+            PROCTORING
+          </span>
+
+          <strong>
+            ${
+              room.antiCheat
+                ? 'Enabled'
+                : 'Standard'
+            }
+          </strong>
+
+        </div>
+
+
+        <div class="participant-stat">
+
+          <span>
+            YOUR SESSIONS
+          </span>
+
+          <strong>
+            ${myAttempts.length}
+          </strong>
+
+        </div>
+
+      </div>
+
+
+      <div class="dashboard-grid participant-grid">
+
+        <div class="panel examination-start-panel">
+
+          <span class="eyebrow">
+            EXAMINATION
           </span>
 
           <h3>
             ${esc(room.title)}
           </h3>
 
+          <p>
+            ${esc(
+              room.description ||
+              'Please review the examination instructions before starting.'
+            )}
+          </p>
+
+
+          <div class="instruction-list">
+
+            <div>
+              <span>01</span>
+              <p>
+                Ensure you have a stable internet
+                connection before beginning.
+              </p>
+            </div>
+
+            <div>
+              <span>02</span>
+              <p>
+                Complete the Google Form within the
+                configured examination period.
+              </p>
+            </div>
+
+            <div>
+              <span>03</span>
+              <p>
+                Submit the Google Form first, then
+                click <strong>Submit Exam</strong>
+                in Proctor+.
+              </p>
+            </div>
+
+            <div>
+              <span>04</span>
+              <p>
+                If proctoring is enabled, tab switching,
+                focus loss and fullscreen exits may
+                generate security events.
+              </p>
+            </div>
+
+          </div>
+
+
+          ${
+            room.antiCheat
+              ? `
+                <div class="notice danger-notice">
+
+                  <strong>
+                    Proctoring Enabled
+                  </strong>
+
+                  <p>
+                    Security monitoring is enabled for
+                    this examination. Browser limitations
+                    mean Proctor+ provides detection and
+                    deterrence rather than complete
+                    browser lockdown.
+                  </p>
+
+                </div>
+              `
+              : ''
+          }
+
+
+          <button
+            class="primary-btn"
+            data-action="start-exam"
+            data-id="${room.id}"
+            ${
+              availability.status !== 'Available'
+                ? 'disabled'
+                : ''
+            }>
+
+            ${
+              availability.status === 'Available'
+                ? 'Start Examination →'
+                : 'Examination Unavailable'
+            }
+
+          </button>
+
         </div>
 
-        <button
-          type="button"
-          class="close-btn"
-          data-action="close-modal"
-          aria-label="Close"
-        >
-          ×
-        </button>
 
-      </div>
+        <div class="panel">
 
-      <div class="modal-body">
+          <span class="eyebrow">
+            ROOM INFORMATION
+          </span>
 
-        <div class="notice">
-          You may submit this examination
-          independently from other participants
-          in the same room.
+          <h3>
+            Access Details
+          </h3>
+
+
+          <div class="room-detail-list">
+
+            <div>
+              <span>Room Number</span>
+              <strong>
+                ${esc(room.roomNumber)}
+              </strong>
+            </div>
+
+            <div>
+              <span>Availability</span>
+              <strong>
+                ${
+                  availability.status
+                }
+              </strong>
+            </div>
+
+            <div>
+              <span>Timer</span>
+              <strong>
+                ${
+                  room.timerEnabled
+                    ? `${room.durationMinutes} min`
+                    : 'Disabled'
+                }
+              </strong>
+            </div>
+
+            <div>
+              <span>Anti-cheat</span>
+              <strong>
+                ${
+                  room.antiCheat
+                    ? 'Enabled'
+                    : 'Disabled'
+                }
+              </strong>
+            </div>
+
+            <div>
+              <span>Your completed sessions</span>
+              <strong>
+                ${completed}
+              </strong>
+            </div>
+
+          </div>
+
+
+          <div class="participant-note">
+
+            <span class="note-icon">
+              i
+            </span>
+
+            <p>
+              You may enter and submit this examination
+              without affecting other participants using
+              the same room.
+            </p>
+
+          </div>
+
         </div>
 
-        <ul
-          class="instruction-list"
-        >
+      </div>
 
-          <li>
-            ${
-              room.timerEnabled
-                ? `
-                  You have
-                  <strong>
-                    ${room.durationMinutes} minutes
-                  </strong>
-                  to complete the examination.
-                `
-                : `
-                  No countdown timer is configured for this examination.
-                `
-            }
-          </li>
+    `;
 
-          <li>
-            ${
-              room.antiCheat
-                ? `
-                  Anti-cheat is enabled.
-                  Up to
-                  <strong>
-                    ${room.maxViolations}
-                  </strong>
-                  violations are allowed for this individual session.
-                `
-                : `
-                  Anti-cheat monitoring is disabled.
-                `
-            }
-          </li>
+    bindActions();
+  }
 
-          <li>
-            Complete the Google Form first.
-          </li>
 
-          <li>
-            If the Google Form becomes unavailable
-            after submission, use the
+  /* ================================================================
+     START EXAM
+  ================================================================ */
+
+  function startExam(id) {
+
+    const room =
+      db.rooms.find(
+        item =>
+          item.id === id
+      );
+
+
+    if (!room) return;
+
+
+    const availability =
+      getAvailability(room);
+
+
+    if (
+      availability.status !==
+      'Available'
+    ) {
+      toast(
+        availability.message,
+        'error'
+      );
+
+      return;
+    }
+
+
+    openStartInstructions(room);
+  }
+
+
+  function openStartInstructions(room) {
+
+    $('#modal-root').hidden = false;
+
+
+    $('#modal-root').innerHTML = `
+
+      <div
+        class="modal modal-medium"
+        role="dialog"
+        aria-modal="true">
+
+        <div class="modal-head">
+
+          <div>
+
+            <span class="eyebrow">
+              EXAMINATION INSTRUCTIONS
+            </span>
+
+            <h3>
+              ${esc(room.title)}
+            </h3>
+
+          </div>
+
+          <button
+            class="close-btn"
+            type="button"
+            data-action="close-modal"
+            aria-label="Close">
+            ×
+          </button>
+
+        </div>
+
+
+        <div class="modal-body">
+
+          <div class="notice">
+
             <strong>
-              Refresh Form
+              Ready to begin?
             </strong>
-            button.
-          </li>
 
-          <li>
-            When finished, click
-            <strong>
-              Submit Exam
-            </strong>
-            in the portal.
-          </li>
+            <p>
+              This action starts a new independent
+              examination session for this device.
+            </p>
 
-        </ul>
+          </div>
 
-        ${
-          room.antiCheat
-            ? `
-              <div class="notice danger-notice">
-                Fullscreen, tab/window focus and
-                visibility events may be monitored.
-                Browser limitations mean this is a
-                detection and deterrence layer.
-              </div>
-            `
-            : ''
-        }
+
+          <div class="start-rule-list">
+
+            <div>
+              <span>01</span>
+
+              <p>
+                ${
+                  room.timerEnabled
+                    ? `You have <strong>${room.durationMinutes} minutes</strong> to complete the examination.`
+                    : 'No countdown timer is configured for this examination.'
+                }
+              </p>
+
+            </div>
+
+
+            <div>
+              <span>02</span>
+
+              <p>
+                ${
+                  room.antiCheat
+                    ? `Proctoring is enabled with a maximum of <strong>${room.maxViolations}</strong> security event(s) before the current session is terminated.`
+                    : 'Proctoring monitoring is disabled for this examination.'
+                }
+              </p>
+
+            </div>
+
+
+            <div>
+              <span>03</span>
+
+              <p>
+                Complete the Google Form and use the
+                Proctor+ <strong>Submit Exam</strong>
+                button after submission.
+              </p>
+
+            </div>
+
+
+            <div>
+              <span>04</span>
+
+              <p>
+                Each start creates a separate session.
+                Other participants in this room are
+                not affected.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          ${
+            room.antiCheat
+              ? `
+                <div class="notice danger-notice">
+
+                  <strong>
+                    Proctoring Notice
+                  </strong>
+
+                  <p>
+                    Fullscreen, visibility and focus
+                    events may be monitored. Browser
+                    security limitations mean this is
+                    a detection and deterrence system,
+                    not a complete browser lockdown.
+                  </p>
+
+                </div>
+              `
+              : ''
+          }
+
+        </div>
+
+
+        <div class="modal-footer">
+
+          <button
+            type="button"
+            class="secondary-btn"
+            data-action="close-modal">
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            class="primary-btn"
+            data-action="confirm-start"
+            data-id="${room.id}">
+            Start Examination
+          </button>
+
+        </div>
 
       </div>
 
-      <div class="modal-footer">
+    `;
+  }
 
-        <button
-          type="button"
-          class="secondary-btn"
-          data-action="close-modal"
-        >
-          Cancel
-        </button>
 
-        <button
-          type="button"
-          class="primary-btn"
-          data-action="confirm-room-start"
-          data-id="${room.id}"
-        >
-          Start Examination
-        </button>
+  function confirmStart(id) {
 
-      </div>
+    closeModal();
 
-    </div>
-  `;
 
-  bindActions();
-}
+    const room =
+      db.rooms.find(
+        item =>
+          item.id === id
+      );
 
-/* =========================================================
-   CREATE / RESUME ATTEMPT
-   ========================================================= */
 
-function beginExamSession(
-  room,
-  existingAttempt = null,
-  isResume = false
-) {
-  closeModal();
+    if (!room || !session) {
+      return;
+    }
 
-  if (!room) return;
 
-  let attempt =
-    existingAttempt;
+    const timerEnabled =
+      boolSetting(
+        room.timerEnabled,
+        false
+      );
 
-  if (!attempt) {
-    attempt = {
+
+    const durationMinutes =
+      Math.max(
+        1,
+        Math.round(
+          Number(
+            room.durationMinutes
+          ) || 60
+        )
+      );
+
+
+    const antiCheat =
+      boolSetting(
+        room.antiCheat,
+        false
+      );
+
+
+    const maxViolations =
+      Math.max(
+        1,
+        Math.round(
+          Number(
+            room.maxViolations
+          ) || 3
+        )
+      );
+
+
+    currentRoom =
+      clone(room);
+
+
+    /*
+     * IMPORTANT:
+     * There is NO search for an existing completed attempt.
+     * Every participant can start another session.
+     */
+    const attempt = {
+
       id: uid('attempt'),
 
-      roomId: room.id,
-
-      roomNumber:
-        room.roomNumber,
+      examId:
+        room.id,
 
       examTitle:
         room.title,
 
+      roomNumber:
+        room.roomNumber,
+
       participantId:
         session.participantId,
+
+      participantLabel:
+        participantLabel(),
 
       startedAt:
         Date.now(),
@@ -3140,742 +3882,758 @@ function beginExamSession(
 
       violations:
         0
+
     };
+
 
     db.attempts.push(
       attempt
     );
 
+
     saveDB();
-  }
 
-  currentRoom =
-    clone(room);
 
-  const timerEnabled =
-    room.timerEnabled === true ||
-    room.timerEnabled === 'true' ||
-    room.timerEnabled === 1 ||
-    room.timerEnabled === '1';
+    currentAttempt =
+      attempt;
 
-  const antiCheat =
-    room.antiCheat === true ||
-    room.antiCheat === 'true' ||
-    room.antiCheat === 1 ||
-    room.antiCheat === '1';
 
-  const durationMinutes =
-    Math.max(
-      1,
-      Math.round(
-        Number(
-          room.durationMinutes
-        ) || 60
-      )
-    );
+    clearInterval(timer);
 
-  /*
-    On resume, calculate the remaining time
-    from the original attempt start time.
-  */
 
-  let seconds =
-    timerEnabled
-      ? durationMinutes * 60
-      : 0;
+    examState = {
 
-  if (
-    isResume &&
-    timerEnabled &&
-    attempt.startedAt
-  ) {
-    const elapsed =
-      Math.floor(
-        (
-          Date.now() -
-          attempt.startedAt
-        ) / 1000
+      attemptId:
+        attempt.id,
+
+      seconds:
+        timerEnabled
+          ? durationMinutes * 60
+          : 0,
+
+      timerEnabled,
+
+      antiCheat,
+
+      maxViolations,
+
+      startedAt:
+        Date.now(),
+
+      active:
+        true
+
+    };
+
+
+    $('#live-exam-title').textContent =
+      room.title;
+
+
+    $('#live-exam-examiner').textContent =
+      `Room ${room.roomNumber} • ${participantLabel()}`;
+
+
+    $('#exam-violations').textContent =
+      `0 / ${maxViolations}`;
+
+
+    $('#exam-iframe').src =
+      addRefreshParam(
+        room.formUrl
       );
 
-    seconds =
-      Math.max(
-        0,
-        durationMinutes * 60 -
-        elapsed
-      );
-  }
 
-  examState = {
-    attemptId:
-      attempt.id,
+    $('#exam-instructions').textContent =
+      timerEnabled
+        ? `Timer: ${durationMinutes} minutes • Proctoring: ${antiCheat ? 'Enabled' : 'Disabled'} • Submit the Google Form first, then click Submit Exam.`
+        : `No timer • Proctoring: ${antiCheat ? 'Enabled' : 'Disabled'} • Submit the Google Form first, then click Submit Exam.`;
 
-    seconds,
 
-    timerEnabled,
+    showView('exam');
 
-    antiCheat,
 
-    maxViolations:
-      Math.max(
-        1,
-        Number(
-          room.maxViolations
-        ) || 3
-      ),
-
-    startedAt:
-      attempt.startedAt,
-
-    active:
-      true
-  };
-
-  $('#live-exam-title').textContent =
-    room.title;
-
-  $('#live-exam-examiner').textContent =
-    `Room ${room.roomNumber} • Participant ${session.participantId}`;
-
-  $('#exam-violations').textContent =
-    `${attempt.violations || 0} / ${room.maxViolations}`;
-
-  $('#exam-instructions').textContent =
-    timerEnabled
-      ? `Timer: ${durationMinutes} minutes • Anti-cheat: ${
-          antiCheat
-            ? 'Enabled'
-            : 'Disabled'
-        }`
-      : `No timer • Anti-cheat: ${
-          antiCheat
-            ? 'Enabled'
-            : 'Disabled'
-        }`;
-
-  /*
-    Load Google Form.
-  */
-
-  loadGoogleForm();
-
-  showView('exam');
-
-  document.body.classList.add(
-    'lockdown-active'
-  );
-
-  $('#exam-view')
-    ?.classList.add(
+    document.body.classList.add(
       'lockdown-active'
     );
 
-  graceUntil =
-    Date.now() + GRACE;
 
-  if (antiCheat) {
-    requestFullscreen().finally(
-      () => {
-        graceUntil =
-          Date.now() + GRACE;
-      }
-    );
-  }
+    $('#exam-view')
+      ?.classList
+      .add('lockdown-active');
 
-  if (
-    timerEnabled &&
-    seconds <= 0
-  ) {
-    finishExam(
-      'Time Expired',
-      'Time Expired',
-      'Your allotted examination time has ended.',
-      '⌛'
-    );
 
-    return;
-  }
+    graceUntil =
+      Date.now() +
+      FULLSCREEN_GRACE;
 
-  if (timerEnabled) {
-    startTimer();
-  } else {
+
+    if (antiCheat) {
+      requestFullscreen()
+        .finally(() => {
+          graceUntil =
+            Date.now() +
+            FULLSCREEN_GRACE;
+        });
+    }
+
+
     renderTimer();
+
+
+    if (timerEnabled) {
+      startTimer();
+    }
   }
-}
 
-/* =========================================================
-   GOOGLE FORM
-   ========================================================= */
 
-function loadGoogleForm() {
-  if (!currentRoom) return;
+  /* ================================================================
+     GOOGLE FORM REFRESH
+  ================================================================ */
 
-  const iframe =
-    $('#exam-iframe');
+  function addRefreshParam(url) {
 
-  if (!iframe) return;
+    if (!url) {
+      return DEFAULT_FORM;
+    }
 
-  /*
-    Add a cache-busting parameter.
 
-    This helps when the Google Form page becomes stale
-    inside an iframe after a previous submission.
-  */
+    const separator =
+      url.includes('?')
+        ? '&'
+        : '?';
 
-  let url =
-    String(
-      currentRoom.formUrl || ''
-    ).trim();
 
-  if (!url) return;
-
-  try {
-    const parsed =
-      new URL(url);
-
-    parsed.searchParams.set(
-      'embedded',
-      'true'
-    );
-
-    parsed.searchParams.set(
-      'proctorRefresh',
+    return (
+      url +
+      separator +
+      '_proctor_refresh=' +
       Date.now()
     );
+  }
 
-    url =
-      parsed.toString();
-  } catch {
+
+  function refreshGoogleForm() {
+
     if (
-      url.includes('?')
-    ) {
-      url +=
-        '&proctorRefresh=' +
-        Date.now();
-    } else {
-      url +=
-        '?proctorRefresh=' +
-        Date.now();
-    }
-  }
-
-  iframe.src =
-    'about:blank';
-
-  setTimeout(() => {
-    if (
-      examState?.active
-    ) {
-      iframe.src = url;
-    }
-  }, 100);
-}
-
-function refreshGoogleForm() {
-  if (!examState?.active) {
-    return;
-  }
-
-  const button =
-    $('#refresh-form-btn');
-
-  if (button) {
-    button.disabled = true;
-    button.textContent =
-      'Refreshing...';
-  }
-
-  const iframe =
-    $('#exam-iframe');
-
-  if (iframe) {
-    iframe.style.opacity = '0.45';
-  }
-
-  loadGoogleForm();
-
-  setTimeout(() => {
-    if (button) {
-      button.disabled = false;
-      button.textContent =
-        '↻ Refresh Form';
-    }
-
-    if (iframe) {
-      iframe.style.opacity = '1';
-    }
-  }, 900);
-}
-
-/* =========================================================
-   FULLSCREEN
-   ========================================================= */
-
-function requestFullscreen() {
-  const element =
-    document.documentElement;
-
-  const fn =
-    element.requestFullscreen ||
-    element.webkitRequestFullscreen ||
-    element.mozRequestFullScreen;
-
-  return fn
-    ? Promise.resolve(
-        fn.call(element)
-      ).catch(() => {})
-    : Promise.resolve();
-}
-
-function exitFullscreen() {
-  const fn =
-    document.exitFullscreen ||
-    document.webkitExitFullscreen ||
-    document.mozCancelFullScreen;
-
-  if (
-    fn &&
-    isFullscreen()
-  ) {
-    Promise.resolve(
-      fn.call(document)
-    ).catch(() => {});
-  }
-}
-
-function isFullscreen() {
-  return !!(
-    document.fullscreenElement ||
-    document.webkitFullscreenElement ||
-    document.mozFullScreenElement
-  );
-}
-
-/* =========================================================
-   TIMER
-   ========================================================= */
-
-function startTimer() {
-  clearInterval(timer);
-
-  renderTimer();
-
-  timer =
-    setInterval(() => {
-      if (
-        !examState?.active
-      ) {
-        return;
-      }
-
-      examState.seconds--;
-
-      renderTimer();
-
-      if (
-        examState.seconds <= 0
-      ) {
-        clearInterval(timer);
-
-        finishExam(
-          'Time Expired',
-          'Time Expired',
-          'Your allotted examination time has ended.',
-          '⌛'
-        );
-      }
-    }, 1000);
-}
-
-function renderTimer() {
-  const seconds =
-    Math.max(
-      0,
-      Number(
-        examState?.seconds
-      ) || 0
-    );
-
-  const minutes =
-    Math.floor(
-      seconds / 60
-    )
-      .toString()
-      .padStart(2, '0');
-
-  const remaining =
-    (
-      seconds % 60
-    )
-      .toString()
-      .padStart(2, '0');
-
-  const timerElement =
-    $('#exam-timer');
-
-  if (timerElement) {
-    timerElement.textContent =
-      examState?.timerEnabled
-        ? `${minutes}:${remaining}`
-        : 'No Timer';
-
-    timerElement.classList.toggle(
-      'warning',
-      seconds <= 300 &&
-      seconds > 60
-    );
-
-    timerElement.classList.toggle(
-      'danger',
-      seconds <= 60 &&
-      !!examState?.timerEnabled
-    );
-  }
-
-  const duration =
-    Math.max(
-      1,
-      Math.round(
-        Number(
-          currentRoom?.durationMinutes
-        ) || 60
-      )
-    );
-
-  const percentage =
-    examState?.timerEnabled
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            (
-              seconds /
-              (
-                duration *
-                60
-              )
-            ) *
-              100
-          )
-        )
-      : 0;
-
-  const progress =
-    $('#exam-progress');
-
-  if (progress) {
-    progress.style.width =
-      (
-        100 -
-        percentage
-      ) + '%';
-  }
-}
-
-/* =========================================================
-   PROCTORING
-   ========================================================= */
-
-function registerViolation(reason) {
-  if (
-    !examState?.active ||
-    !examState.antiCheat
-  ) {
-    return;
-  }
-
-  const now =
-    Date.now();
-
-  if (
-    now < graceUntil ||
-    now - lastViolation <
-      DEBOUNCE ||
-    violationOverlayOpen
-  ) {
-    return;
-  }
-
-  lastViolation =
-    now;
-
-  const attempt =
-    db.attempts.find(
-      item =>
-        item.id ===
-        examState.attemptId
-    );
-
-  if (!attempt) {
-    return;
-  }
-
-  const number =
-    (
-      attempt.violations ||
-      0
-    ) + 1;
-
-  attempt.violations =
-    number;
-
-  db.violations.push({
-    id: uid('vio'),
-
-    attemptId:
-      attempt.id,
-
-    roomId:
-      currentRoom.id,
-
-    roomNumber:
-      currentRoom.roomNumber,
-
-    examTitle:
-      currentRoom.title,
-
-    participantId:
-      session.participantId,
-
-    number,
-
-    reason,
-
-    timestamp:
-      now
-  });
-
-  saveDB();
-
-  $('#exam-violations').textContent =
-    `${number} / ${examState.maxViolations}`;
-
-  if (
-    number >=
-    examState.maxViolations
-  ) {
-    finishExam(
-      'Terminated',
-      'Exam Terminated',
-      'You have been disqualified for exceeding the maximum allowed violations.',
-      '×',
-      true
-    );
-
-    return;
-  }
-
-  showViolationOverlay(
-    reason
-  );
-}
-
-function showViolationOverlay(
-  reason
-) {
-  if (
-    !examState?.active ||
-    !examState.antiCheat
-  ) {
-    return;
-  }
-
-  violationOverlayOpen =
-    true;
-
-  $('#violation-reason').textContent =
-    reason;
-
-  const attempt =
-    db.attempts.find(
-      item =>
-        item.id ===
-        examState.attemptId
-    );
-
-  $('#overlay-count').textContent =
-    attempt?.violations ||
-    0;
-
-  $('#overlay-max').textContent =
-    examState.maxViolations;
-
-  $('#violation-overlay').hidden =
-    false;
-
-  $('#exam-iframe').style.filter =
-    'blur(6px) brightness(.45)';
-}
-
-function closeViolationOverlay() {
-  if (!examState?.active) {
-    return;
-  }
-
-  $('#violation-overlay').hidden =
-    true;
-
-  violationOverlayOpen =
-    false;
-
-  $('#exam-iframe').style.filter =
-    '';
-
-  graceUntil =
-    Date.now() + GRACE;
-
-  requestFullscreen().finally(
-    () => {
-      graceUntil =
-        Date.now() + GRACE;
-    }
-  );
-}
-
-$('#resume-exam-btn')
-  ?.addEventListener(
-    'click',
-    closeViolationOverlay
-  );
-
-/* =========================================================
-   PROCTORING EVENTS
-   ========================================================= */
-
-[
-  'fullscreenchange',
-  'webkitfullscreenchange',
-  'mozfullscreenchange'
-].forEach(
-  eventName => {
-    document.addEventListener(
-      eventName,
-      () => {
-        if (
-          examState?.active &&
-          examState.antiCheat &&
-          !isFullscreen() &&
-          Date.now() > graceUntil
-        ) {
-          registerViolation(
-            'You exited full-screen mode.'
-          );
-        }
-      }
-    );
-  }
-);
-
-document.addEventListener(
-  'visibilitychange',
-  () => {
-    if (
-      examState?.active &&
-      examState.antiCheat &&
-      document.hidden
-    ) {
-      registerViolation(
-        'You switched tabs or minimized the window.'
-      );
-    }
-  }
-);
-
-window.addEventListener(
-  'blur',
-  () => {
-    if (
-      examState?.active &&
-      examState.antiCheat
-    ) {
-      registerViolation(
-        'The examination window lost focus.'
-      );
-    }
-  }
-);
-
-document.addEventListener(
-  'contextmenu',
-  event => {
-    if (
-      examState?.active
-    ) {
-      event.preventDefault();
-    }
-  }
-);
-
-document.addEventListener(
-  'copy',
-  event => {
-    if (
-      examState?.active
-    ) {
-      event.preventDefault();
-    }
-  }
-);
-
-document.addEventListener(
-  'cut',
-  event => {
-    if (
-      examState?.active
-    ) {
-      event.preventDefault();
-    }
-  }
-);
-
-document.addEventListener(
-  'paste',
-  event => {
-    if (
-      examState?.active
-    ) {
-      event.preventDefault();
-    }
-  }
-);
-
-document.addEventListener(
-  'keydown',
-  event => {
-    if (
+      !currentRoom ||
       !examState?.active
     ) {
       return;
     }
 
-    const key =
-      (
-        event.key || ''
-      ).toLowerCase();
 
-    const modifier =
-      event.ctrlKey ||
-      event.metaKey;
+    const iframe =
+      $('#exam-iframe');
 
-    const restricted =
-      key === 'f12' ||
-      (
-        modifier &&
-        event.shiftKey &&
-        ['i', 'j', 'c']
-          .includes(key)
-      ) ||
-      (
-        modifier &&
-        ['t', 'n', 'w', 'u']
-          .includes(key)
+
+    if (!iframe) return;
+
+
+    /*
+     * Force the iframe to reload even if the browser
+     * has cached the Google Forms response/submission page.
+     */
+    iframe.src =
+      'about:blank';
+
+
+    setTimeout(() => {
+
+      if (!examState?.active) return;
+
+      iframe.src =
+        addRefreshParam(
+          currentRoom.formUrl
+        );
+
+    }, 100);
+
+
+    toast(
+      'Google Form refreshed.',
+      'success'
+    );
+  }
+
+
+  /* ================================================================
+     FULLSCREEN
+  ================================================================ */
+
+  function requestFullscreen() {
+
+    const element =
+      document.documentElement;
+
+
+    const fn =
+      element.requestFullscreen ||
+      element.webkitRequestFullscreen ||
+      element.mozRequestFullScreen;
+
+
+    if (!fn) {
+      return Promise.resolve();
+    }
+
+
+    return Promise
+      .resolve(
+        fn.call(element)
+      )
+      .catch(() => {});
+  }
+
+
+  function exitFullscreen() {
+
+    const fn =
+      document.exitFullscreen ||
+      document.webkitExitFullscreen ||
+      document.mozCancelFullScreen;
+
+
+    if (
+      fn &&
+      isFullscreen()
+    ) {
+      Promise
+        .resolve(
+          fn.call(document)
+        )
+        .catch(() => {});
+    }
+  }
+
+
+  function isFullscreen() {
+
+    return !!(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement
+    );
+  }
+
+
+  /* ================================================================
+     TIMER
+  ================================================================ */
+
+  function startTimer() {
+
+    clearInterval(timer);
+
+    renderTimer();
+
+
+    timer =
+      setInterval(() => {
+
+        if (
+          !examState?.active
+        ) {
+          return;
+        }
+
+
+        examState.seconds--;
+
+        renderTimer();
+
+
+        if (
+          examState.seconds <= 0
+        ) {
+
+          clearInterval(timer);
+
+          finishExam(
+            'Time Expired',
+            'Time Expired',
+            'Your allotted examination time has ended.',
+            '⌛'
+          );
+
+        }
+
+      }, 1000);
+  }
+
+
+  function renderTimer() {
+
+    const seconds =
+      Math.max(
+        0,
+        Number(
+          examState?.seconds
+        ) || 0
       );
 
-    if (restricted) {
-      event.preventDefault();
 
-      registerViolation(
-        `Restricted shortcut attempt: ${
-          [
+    const minutes =
+      Math.floor(
+        seconds / 60
+      )
+        .toString()
+        .padStart(2, '0');
+
+
+    const remainingSeconds =
+      (
+        seconds % 60
+      )
+        .toString()
+        .padStart(2, '0');
+
+
+    const timerElement =
+      $('#exam-timer');
+
+
+    if (timerElement) {
+
+      timerElement.textContent =
+        examState?.timerEnabled
+          ? `${minutes}:${remainingSeconds}`
+          : 'No Timer';
+
+
+      timerElement.classList.toggle(
+        'warning',
+        seconds <= 300 &&
+        seconds > 60
+      );
+
+
+      timerElement.classList.toggle(
+        'danger',
+        seconds <= 60 &&
+        !!examState?.timerEnabled
+      );
+
+    }
+
+
+    const duration =
+      Math.max(
+        1,
+        Math.round(
+          Number(
+            currentRoom?.durationMinutes
+          ) || 60
+        )
+      );
+
+
+    const percentage =
+      examState?.timerEnabled
+        ? Math.max(
+            0,
+            Math.min(
+              100,
+              seconds /
+                (duration * 60) *
+                100
+            )
+          )
+        : 0;
+
+
+    const progress =
+      $('#exam-progress');
+
+
+    if (progress) {
+      progress.style.width =
+        (100 - percentage) +
+        '%';
+    }
+
+  }
+
+
+  /* ================================================================
+     PROCTORING
+  ================================================================ */
+
+  function registerViolation(reason) {
+
+    if (
+      !examState?.active ||
+      !examState.antiCheat
+    ) {
+      return;
+    }
+
+
+    const now =
+      Date.now();
+
+
+    if (
+      now <
+      graceUntil
+    ) {
+      return;
+    }
+
+
+    if (
+      now -
+      lastViolation <
+      VIOLATION_DEBOUNCE
+    ) {
+      return;
+    }
+
+
+    if (
+      violationOverlayOpen
+    ) {
+      return;
+    }
+
+
+    lastViolation =
+      now;
+
+
+    const attempt =
+      db.attempts.find(
+        item =>
+          item.id ===
+          examState.attemptId
+      );
+
+
+    if (!attempt) {
+      return;
+    }
+
+
+    const number =
+      (attempt.violations || 0) +
+      1;
+
+
+    attempt.violations =
+      number;
+
+
+    db.violations.push({
+
+      id:
+        uid('violation'),
+
+      attemptId:
+        attempt.id,
+
+      examId:
+        currentRoom.id,
+
+      examTitle:
+        currentRoom.title,
+
+      roomNumber:
+        currentRoom.roomNumber,
+
+      participantId:
+        attempt.participantId,
+
+      participantLabel:
+        attempt.participantLabel,
+
+      number,
+
+      reason,
+
+      timestamp:
+        now
+
+    });
+
+
+    saveDB();
+
+
+    $('#exam-violations').textContent =
+      `${number} / ${examState.maxViolations}`;
+
+
+    if (
+      number >=
+      examState.maxViolations
+    ) {
+
+      finishExam(
+        'Terminated',
+        'Examination Terminated',
+        'This examination session was terminated after exceeding the maximum allowed security events.',
+        '×',
+        true
+      );
+
+      return;
+    }
+
+
+    showViolationOverlay(
+      reason
+    );
+  }
+
+
+  function showViolationOverlay(
+    reason
+  ) {
+
+    if (
+      !examState?.active ||
+      !examState.antiCheat
+    ) {
+      return;
+    }
+
+
+    violationOverlayOpen =
+      true;
+
+
+    $('#violation-reason')
+      .textContent =
+      reason;
+
+
+    const attempt =
+      db.attempts.find(
+        item =>
+          item.id ===
+          examState.attemptId
+      );
+
+
+    $('#overlay-count')
+      .textContent =
+      attempt?.violations ||
+      0;
+
+
+    $('#overlay-max')
+      .textContent =
+      examState.maxViolations;
+
+
+    $('#violation-overlay')
+      .hidden = false;
+
+
+    $('#exam-iframe')
+      .style.filter =
+      'blur(6px) brightness(.45)';
+  }
+
+
+  $('#resume-exam-btn')
+    ?.addEventListener(
+      'click',
+      async () => {
+
+        if (
+          !examState?.active
+        ) {
+          return;
+        }
+
+
+        $('#violation-overlay')
+          .hidden = true;
+
+
+        violationOverlayOpen =
+          false;
+
+
+        $('#exam-iframe')
+          .style.filter = '';
+
+
+        graceUntil =
+          Date.now() +
+          FULLSCREEN_GRACE;
+
+
+        await requestFullscreen();
+
+
+        graceUntil =
+          Date.now() +
+          FULLSCREEN_GRACE;
+
+      }
+    );
+
+
+  [
+    'fullscreenchange',
+    'webkitfullscreenchange',
+    'mozfullscreenchange'
+  ].forEach(eventName => {
+
+    document.addEventListener(
+      eventName,
+      () => {
+
+        if (
+          examState?.active &&
+          examState.antiCheat &&
+          !isFullscreen() &&
+          Date.now() >
+            graceUntil
+        ) {
+
+          registerViolation(
+            'You exited full-screen mode.'
+          );
+
+        }
+
+      }
+    );
+
+  });
+
+
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+
+      if (
+        examState?.active &&
+        examState.antiCheat &&
+        document.hidden
+      ) {
+
+        registerViolation(
+          'You switched tabs or minimized the examination window.'
+        );
+
+      }
+
+    }
+  );
+
+
+  window.addEventListener(
+    'blur',
+    () => {
+
+      if (
+        examState?.active &&
+        examState.antiCheat
+      ) {
+
+        registerViolation(
+          'The examination window lost focus.'
+        );
+
+      }
+
+    }
+  );
+
+
+  document.addEventListener(
+    'contextmenu',
+    event => {
+
+      if (examState?.active) {
+        event.preventDefault();
+      }
+
+    }
+  );
+
+
+  document.addEventListener(
+    'copy',
+    event => {
+
+      if (examState?.active) {
+        event.preventDefault();
+      }
+
+    }
+  );
+
+
+  document.addEventListener(
+    'cut',
+    event => {
+
+      if (examState?.active) {
+        event.preventDefault();
+      }
+
+    }
+  );
+
+
+  document.addEventListener(
+    'paste',
+    event => {
+
+      if (examState?.active) {
+        event.preventDefault();
+      }
+
+    }
+  );
+
+
+  document.addEventListener(
+    'keydown',
+    event => {
+
+      if (!examState?.active) {
+        return;
+      }
+
+
+      const key =
+        (
+          event.key ||
+          ''
+        ).toLowerCase();
+
+
+      const modifier =
+        event.ctrlKey ||
+        event.metaKey;
+
+
+      const restricted =
+        key === 'f12' ||
+        (
+          modifier &&
+          event.shiftKey &&
+          ['i', 'j', 'c'].includes(key)
+        ) ||
+        (
+          modifier &&
+          ['t', 'n', 'w', 'u'].includes(key)
+        );
+
+
+      if (restricted) {
+
+        event.preventDefault();
+
+
+        registerViolation(
+          `Restricted shortcut attempt: ${[
             event.ctrlKey
               ? 'Ctrl'
               : '',
@@ -3891,490 +4649,496 @@ document.addEventListener(
             event.key
           ]
             .filter(Boolean)
-            .join('+')
-        }`
-      );
-    }
-  }
-);
+            .join('+')}`
+        );
 
-window.addEventListener(
-  'beforeunload',
-  event => {
-    if (
-      examState?.active
-    ) {
-      event.preventDefault();
-      event.returnValue = '';
-    }
-  }
-);
-
-/* =========================================================
-   SUBMIT EXAM
-   ========================================================= */
-
-function submitExam() {
-  if (
-    !examState?.active
-  ) {
-    return;
-  }
-
-  const confirmed =
-    confirm(
-      'Confirm that you have submitted the Google Form.\n\n' +
-      'This will permanently end this examination session.\n\n' +
-      'Continue?'
-    );
-
-  if (!confirmed) {
-    return;
-  }
-
-  finishExam(
-    'Completed',
-    'Thank you for taking the exam!',
-    'Your examination session has been submitted successfully.',
-    '✓',
-    false
-  );
-}
-
-function finishExam(
-  status,
-  title,
-  message,
-  icon,
-  terminated = false
-) {
-  if (
-    !examState?.active
-  ) {
-    return;
-  }
-
-  examState.active =
-    false;
-
-  clearInterval(timer);
-
-  timer = null;
-
-  const attempt =
-    db.attempts.find(
-      item =>
-        item.id ===
-        examState.attemptId
-    );
-
-  if (attempt) {
-    attempt.status =
-      status;
-
-    attempt.endedAt =
-      Date.now();
-  }
-
-  saveDB();
-
-  $('#violation-overlay').hidden =
-    true;
-
-  violationOverlayOpen =
-    false;
-
-  document.body.classList.remove(
-    'lockdown-active'
-  );
-
-  $('#exam-view')
-    ?.classList.remove(
-      'lockdown-active'
-    );
-
-  exitFullscreen();
-
-  $('#result-icon').textContent =
-    icon;
-
-  $('#result-icon').style.color =
-    terminated
-      ? 'var(--danger)'
-      : 'var(--success)';
-
-  $('#result-icon').style.background =
-    terminated
-      ? 'rgba(239,91,103,.12)'
-      : 'rgba(49,196,141,.12)';
-
-  $('#result-eyebrow').textContent =
-    terminated
-      ? 'EXAM TERMINATED'
-      : status === 'Time Expired'
-        ? 'TIME EXPIRED'
-        : 'EXAM COMPLETE';
-
-  $('#result-title').textContent =
-    title;
-
-  $('#result-message').textContent =
-    message;
-
-  $('#result-exam').textContent =
-    currentRoom?.title ||
-    '—';
-
-  $('#result-user').textContent =
-    session?.participantId ||
-    '—';
-
-  $('#result-violations').textContent =
-    attempt?.violations ||
-    0;
-
-  $('#result-ended').textContent =
-    fmtDate(Date.now());
-
-  showView('result');
-}
-
-/* =========================================================
-   RESULT DASHBOARD
-   ========================================================= */
-
-function returnToRoomDashboard() {
-  currentRoom = null;
-  examState = null;
-
-  openRoomDashboard();
-}
-
-/* =========================================================
-   ACTION BINDING
-   ========================================================= */
-
-function bindActions() {
-  $$('[data-action]')
-    .forEach(button => {
-      if (
-        button.dataset.bound === '1'
-      ) {
-        return;
       }
 
-      button.dataset.bound =
-        '1';
-
-      button.addEventListener(
-        'click',
-        () => {
-          const action =
-            button.dataset.action;
-
-          const id =
-            button.dataset.id;
-
-          switch (action) {
-            case 'new-room':
-              openRoomModal();
-              break;
-
-            case 'edit-room':
-              openRoomModal(id);
-              break;
-
-            case 'delete-room':
-              deleteRoom(id);
-              break;
-
-            case 'close-modal':
-              closeModal();
-              break;
-
-            case 'confirm-room-start': {
-              const room =
-                db.rooms.find(
-                  item =>
-                    item.id === id
-                );
-
-              if (
-                room &&
-                getAvailability(
-                  room
-                ).status ===
-                  'Available'
-              ) {
-                beginExamSession(
-                  room
-                );
-              } else {
-                toast(
-                  'This examination room is not currently available.',
-                  'error'
-                );
-              }
-
-              break;
-            }
-
-            case 'start-room-exam':
-              startRoomExam();
-              break;
-
-            case 'resume-exam':
-              resumeExistingExam();
-              break;
-
-            case 'view-submissions':
-              adminPage(
-                'submissions'
-              );
-              break;
-
-            case 'refresh-admin':
-              db = loadDB();
-
-              renderAdminPage(
-                $('#admin-page-title')
-                  ?.textContent
-                  ?.toLowerCase()
-                  ?.replace(
-                    ' ',
-                    '-'
-                  ) || 'dashboard'
-              );
-
-              break;
-
-            case 'toggle-theme':
-              toggleTheme();
-              break;
-
-            case 'reset-demo':
-              resetDemo();
-              break;
-
-            case 'refresh-form':
-              refreshGoogleForm();
-              break;
-
-            case 'close-violation':
-              closeViolationOverlay();
-              break;
-          }
-        }
-      );
-    });
-}
-
-/* =========================================================
-   RESET
-   ========================================================= */
-
-function resetDemo() {
-  const confirmed =
-    confirm(
-      'Reset all rooms, submissions and violation logs?\n\nThis cannot be undone.'
-    );
-
-  if (!confirmed) {
-    return;
-  }
-
-  db = clone(seed);
-
-  saveDB();
-
-  toast(
-    'Demo data has been reset.',
-    'success'
+    }
   );
 
-  openAdmin();
-}
 
-/* =========================================================
-   CLOCK
-   ========================================================= */
+  window.addEventListener(
+    'beforeunload',
+    event => {
 
-setInterval(
-  () => {
-    const now =
-      new Date().toLocaleString();
+      if (
+        examState?.active
+      ) {
 
-    $('#admin-clock').textContent =
-      now;
+        event.preventDefault();
 
-    $('#room-clock').textContent =
-      now;
-  },
-  1000
-);
+        event.returnValue = '';
 
-/* =========================================================
-   SIDEBAR
-   ========================================================= */
+      }
 
-$$('[data-toggle-sidebar]')
-  .forEach(button => {
-    button.addEventListener(
+    }
+  );
+
+
+  /* ================================================================
+     SUBMIT EXAM
+  ================================================================ */
+
+  $('#exam-submit-btn')
+    ?.addEventListener(
       'click',
       () => {
-        const target =
-          $('#' +
-            button.dataset
-              .toggleSidebar);
 
-        target?.classList.toggle(
-          'open'
+        if (
+          !examState?.active
+        ) {
+          return;
+        }
+
+
+        const confirmed =
+          confirm(
+            'Confirm that you have submitted the Google Form.\n\nThis will end the current examination session.'
+          );
+
+
+        if (!confirmed) {
+          return;
+        }
+
+
+        finishExam(
+          'Completed',
+          'Examination Submitted',
+          'Your examination session has been submitted successfully.',
+          '✓'
         );
+
       }
     );
-  });
 
-$$('[data-admin-page]')
-  .forEach(button => {
-    button.addEventListener(
-      'click',
-      () =>
-        adminPage(
-          button.dataset.adminPage
-        )
-    );
-  });
 
-/* =========================================================
-   LOGOUT
-   ========================================================= */
-
-$('#admin-logout')
-  ?.addEventListener(
-    'click',
-    logout
-  );
-
-$('#room-logout')
-  ?.addEventListener(
-    'click',
-    logout
-  );
-
-/* =========================================================
-   EXAM CONTROLS
-   ========================================================= */
-
-$('#exam-submit-btn')
-  ?.addEventListener(
-    'click',
-    submitExam
-  );
-
-$('#refresh-form-btn')
-  ?.addEventListener(
-    'click',
-    refreshGoogleForm
-  );
-
-$('#result-dashboard-btn')
-  ?.addEventListener(
-    'click',
-    returnToRoomDashboard
-  );
-
-$('#theme-toggle-login')
-  ?.addEventListener(
-    'click',
-    toggleTheme
-  );
-
-$('#theme-toggle-admin')
-  ?.addEventListener(
-    'click',
-    toggleTheme
-  );
-
-$('#theme-toggle-room')
-  ?.addEventListener(
-    'click',
-    toggleTheme
-  );
-
-/* =========================================================
-   VIOLATION OVERLAY
-   ========================================================= */
-
-function syncViolationOverlay() {
-  const overlay =
-    $('#violation-overlay');
-
-  if (!overlay) return;
-
-  if (
-    !examState?.active
+  function finishExam(
+    status,
+    title,
+    message,
+    icon,
+    terminated = false
   ) {
+
+    if (
+      !examState?.active
+    ) {
+      return;
+    }
+
+
+    examState.active =
+      false;
+
+
+    clearInterval(timer);
+
+
+    const attempt =
+      db.attempts.find(
+        item =>
+          item.id ===
+          examState.attemptId
+      );
+
+
+    if (attempt) {
+
+      attempt.status =
+        status;
+
+      attempt.endedAt =
+        Date.now();
+
+    }
+
+
+    saveDB();
+
+
+    $('#violation-overlay')
+      .hidden = true;
+
+
     violationOverlayOpen =
       false;
 
-    overlay.hidden =
-      true;
+
+    document.body.classList.remove(
+      'lockdown-active'
+    );
+
+
+    $('#exam-view')
+      ?.classList
+      .remove(
+        'lockdown-active'
+      );
+
+
+    exitFullscreen();
+
+
+    $('#result-icon')
+      .textContent =
+      icon;
+
+
+    $('#result-icon')
+      .classList.toggle(
+        'danger',
+        terminated
+      );
+
+
+    $('#result-icon')
+      .classList.toggle(
+        'success',
+        !terminated
+      );
+
+
+    $('#result-eyebrow')
+      .textContent =
+      terminated
+        ? 'EXAM TERMINATED'
+        : status === 'Time Expired'
+          ? 'TIME EXPIRED'
+          : 'EXAM COMPLETE';
+
+
+    $('#result-title')
+      .textContent =
+      title;
+
+
+    $('#result-message')
+      .textContent =
+      message;
+
+
+    $('#result-room')
+      .textContent =
+      currentRoom?.roomNumber ||
+      '—';
+
+
+    $('#result-exam')
+      .textContent =
+      currentRoom?.title ||
+      '—';
+
+
+    $('#result-violations')
+      .textContent =
+      attempt?.violations ||
+      0;
+
+
+    $('#result-ended')
+      .textContent =
+      fmtDate(Date.now());
+
+
+    showView('result');
   }
-}
 
-/* =========================================================
-   INITIALIZATION
-   ========================================================= */
 
-function initializePortal() {
-  db = loadDB();
+  $('#result-dashboard-btn')
+    ?.addEventListener(
+      'click',
+      () => {
 
-  initAuthentication();
+        currentAttempt =
+          null;
 
-  applyTheme();
+        examState =
+          null;
 
-  syncViolationOverlay();
+        currentRoom =
+          db.rooms.find(
+            item =>
+              item.id ===
+              session?.roomId
+          ) || null;
 
-  if (
-    session &&
-    (
-      session.role === 'admin' ||
-      (
-        session.role ===
-          'participant' &&
-        session.roomId
-      )
-    )
-  ) {
-    openPortal();
-  } else {
+
+        if (currentRoom) {
+          openParticipantDashboard();
+        } else {
+          logout();
+        }
+
+      }
+    );
+
+
+  /* ================================================================
+     SIDEBAR NAVIGATION
+  ================================================================ */
+
+  document.addEventListener(
+    'click',
+    event => {
+
+      const adminButton =
+        event.target.closest(
+          '[data-admin-page]'
+        );
+
+
+      if (adminButton) {
+
+        adminPage(
+          adminButton.dataset.adminPage
+        );
+
+        return;
+      }
+
+
+      const participantButton =
+        event.target.closest(
+          '[data-examiner-page]'
+        );
+
+
+      if (participantButton) {
+
+        renderParticipantDashboard();
+
+        return;
+      }
+
+
+      const sidebarButton =
+        event.target.closest(
+          '[data-toggle-sidebar]'
+        );
+
+
+      if (sidebarButton) {
+
+        const sidebar =
+          $(
+            '#' +
+            sidebarButton.dataset
+              .toggleSidebar
+          );
+
+
+        sidebar?.classList.toggle(
+          'open'
+        );
+
+      }
+
+    }
+  );
+
+
+  /* ================================================================
+     STATIC EVENT BINDINGS
+  ================================================================ */
+
+  $('#login-form')
+    ?.addEventListener(
+      'submit',
+      loginToRoom
+    );
+
+
+  $('#admin-login-open')
+    ?.addEventListener(
+      'click',
+      openAdminLogin
+    );
+
+
+  $('#admin-login-form')
+    ?.addEventListener(
+      'submit',
+      adminLogin
+    );
+
+
+  $('#admin-logout')
+    ?.addEventListener(
+      'click',
+      logout
+    );
+
+
+  $('#examiner-logout')
+    ?.addEventListener(
+      'click',
+      logout
+    );
+
+
+  $('#theme-toggle-login')
+    ?.addEventListener(
+      'click',
+      toggleTheme
+    );
+
+
+  $('#theme-toggle-admin')
+    ?.addEventListener(
+      'click',
+      toggleTheme
+    );
+
+
+  $('#theme-toggle-examiner')
+    ?.addEventListener(
+      'click',
+      toggleTheme
+    );
+
+
+  $('#refresh-form-btn')
+    ?.addEventListener(
+      'click',
+      refreshGoogleForm
+    );
+
+
+  $('#refresh-form-btn-secondary')
+    ?.addEventListener(
+      'click',
+      refreshGoogleForm
+    );
+
+
+  /* ================================================================
+     CLOCK
+  ================================================================ */
+
+  function updateClocks() {
+
+    const now =
+      new Date().toLocaleString(
+        [],
+        {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }
+      );
+
+
+    if ($('#admin-clock')) {
+      $('#admin-clock')
+        .textContent = now;
+    }
+
+
+    if ($('#examiner-clock')) {
+      $('#examiner-clock')
+        .textContent = now;
+    }
+
+  }
+
+
+  setInterval(
+    updateClocks,
+    1000
+  );
+
+
+  updateClocks();
+
+
+  /* ================================================================
+     STARTUP
+  ================================================================ */
+
+  function initializePortal() {
+
+    db =
+      loadDB();
+
+
+    applyTheme();
+
+
+    bindActions();
+
+
+    /*
+     * Restore an administrator session.
+     */
+    if (
+      session?.role ===
+      'admin'
+    ) {
+
+      openAdmin();
+
+      return;
+    }
+
+
+    /*
+     * Restore a participant's room session.
+     */
+    if (
+      session?.role ===
+      'participant'
+    ) {
+
+      const room =
+        db.rooms.find(
+          item =>
+            item.id ===
+            session.roomId
+        );
+
+
+      if (room) {
+
+        currentRoom =
+          clone(room);
+
+        openParticipantDashboard();
+
+        return;
+
+      }
+
+    }
+
+
     session = null;
 
     saveSession();
 
     showView('login');
+
   }
 
-  bindActions();
-}
 
-/* =========================================================
-   DOM READY
-   ========================================================= */
+  if (
+    document.readyState ===
+    'loading'
+  ) {
 
-if (
-  document.readyState ===
-  'loading'
-) {
-  document.addEventListener(
-    'DOMContentLoaded',
-    initializePortal,
-    {
-      once: true
-    }
-  );
-} else {
-  initializePortal();
-}
+    document.addEventListener(
+      'DOMContentLoaded',
+      initializePortal,
+      { once: true }
+    );
+
+  } else {
+
+    initializePortal();
+
+  }
 
 })();
