@@ -448,268 +448,164 @@ function getUserAttempts(u){
 /* =========================
    AUTHENTICATION
 ========================= */
-
 function handleLogin(e){
- if(e)e.preventDefault();
+  if(e)e.preventDefault();
 
- const loginForm=$('#login-form');
+  const form=$('#login-form');
+  const usernameEl=$('#login-username');
+  const passwordEl=$('#login-password');
 
- if(loginForm?.dataset.loggingIn==='1'){
-  return false;
- }
+  if(!form||!usernameEl||!passwordEl)return false;
+  if(form.dataset.loggingIn==='1')return false;
 
- if(loginForm){
-  loginForm.dataset.loggingIn='1';
- }
+  form.dataset.loggingIn='1';
+  clearLoginError();
 
- showLoading('Signing in...');
- clearLoginError();
+  const username=String(usernameEl.value||'').trim();
+  const password=String(passwordEl.value||'');
+  const key=username.toLowerCase();
 
- const usernameEl=$('#login-username');
- const passwordEl=$('#login-password');
-
- const username=String(
-  usernameEl?.value||''
- ).trim();
-
- const password=String(
-  passwordEl?.value||''
- );
-
- if(!username||!password){
-  showLoginError(
-   'Please enter your username and password.'
-  );
-
-  hideLoading();
-
-  if(loginForm){
-   loginForm.dataset.loggingIn='';
+  if(!username||!password){
+    showLoginError('Please enter both your username and your password.');
+    (username?passwordEl:usernameEl).focus();
+    form.dataset.loggingIn='';
+    return false;
   }
 
-  return false;
- }
-
- db=loadDB();
-
- const fallback={
-  admin:{
-   password:'123admin',
-   role:'admin',
-   name:'Administrator',
-   id:'u-admin'
-  },
-  test:{
-   password:'test',
-   role:'examiner',
-   name:'Test Examiner',
-   id:'u-test'
+  // Reload and repair the database before authentication.
+  try{
+    db=loadDB();
+  }catch(err){
+    console.error('Database repair failed:',err);
+    db=clone(seed);
+    saveDB();
   }
- };
 
- const key=username.toLowerCase();
-
- let user=db.users.find(
-  u=>
-   String(u?.username||'').trim().toLowerCase()===key &&
-   String(u?.password??'')===password &&
-   (
-    u?.role==='admin'||
-    u?.role==='examiner'
-   )
- );
-
- /*
-  * Recover examiner account from an assigned examination
-  * in case an older database record did not contain the user.
-  */
- if(!user){
-  const assignedExam=db.exams.find(
-   ex=>
-    String(ex?.examinerUsername||'').trim().toLowerCase()===key &&
-    String(ex?.examinerPassword??'')===password
-  );
-
-  if(assignedExam){
-   const existing=db.users.find(
-    u=>
-     String(u?.username||'').trim().toLowerCase()===key &&
-     u?.role!=='admin'
-   );
-
-   user=existing||{
-    id:uid('user'),
-    username:String(
-     assignedExam.examinerUsername
-    ).trim(),
-    password:String(
-     assignedExam.examinerPassword
-    ),
-    role:'examiner',
-    name:String(
-     assignedExam.examinerUsername
-    ).trim()
-   };
-
-   user.username=String(
-    assignedExam.examinerUsername
-   ).trim();
-
-   user.password=String(
-    assignedExam.examinerPassword
-   );
-
-   user.role='examiner';
-   user.name=user.name||user.username;
-
-   if(!existing){
-    db.users.push(user);
-   }
-
-   saveDB();
-  }
- }
-
- /*
-  * Final fallback guarantees the demo accounts work even
-  * if an older localStorage database is damaged.
-  */
- if(!user&&fallback[key]&&fallback[key].password===password){
-  user={
-   id:fallback[key].id,
-   username:key,
-   password:password,
-   role:fallback[key].role,
-   name:fallback[key].name
+  // Built-in credentials.
+  const credentials={
+    admin:{
+      password:'123admin',
+      role:'admin',
+      name:'Administrator',
+      id:'u-admin'
+    },
+    test:{
+      password:'test',
+      role:'examiner',
+      name:'Test Examiner',
+      id:'u-test'
+    }
   };
 
-  if(!db.users.some(u=>u.id===user.id)){
-   db.users.push(clone(user));
+  let user=null;
+
+  // Check built-in credentials first.
+  if(
+    credentials[key] &&
+    credentials[key].password===password
+  ){
+    const c=credentials[key];
+
+    user={
+      id:c.id,
+      username:key,
+      password:c.password,
+      role:c.role,
+      name:c.name
+    };
+  }else{
+    // Check accounts created by the Admin.
+    user=db.users.find(u=>
+      String(u?.username||'').trim().toLowerCase()===key &&
+      String(u?.password??'')===password &&
+      (u?.role==='admin'||u?.role==='examiner')
+    )||null;
+
+    // Recover examiner account from an assigned exam if needed.
+    if(!user){
+      const assignedExam=db.exams.find(ex=>
+        String(ex?.examinerUsername||'').trim().toLowerCase()===key &&
+        String(ex?.examinerPassword??'')===password
+      );
+
+      if(assignedExam){
+        user=db.users.find(u=>
+          String(u?.username||'').trim().toLowerCase()===key &&
+          u?.role==='examiner'
+        )||{
+          id:uid('user'),
+          username:String(assignedExam.examinerUsername).trim(),
+          password:String(assignedExam.examinerPassword),
+          role:'examiner',
+          name:String(assignedExam.examinerUsername).trim()
+        };
+
+        if(!db.users.some(u=>u.id===user.id)){
+          db.users.push(user);
+        }
+
+        saveDB();
+      }
+    }
+  }
+
+  // Invalid login.
+  if(!user){
+    showLoginError(
+      'Incorrect username or password. Please check your credentials and try again.'
+    );
+
+    passwordEl.value='';
+    passwordEl.focus();
+
+    form.classList.remove('login-error-shake');
+    void form.offsetWidth;
+    form.classList.add('login-error-shake');
+
+    form.dataset.loggingIn='';
+    return false;
+  }
+
+  // Make sure the authenticated account exists in localStorage.
+  const stored=db.users.find(u=>
+    u.id===user.id ||
+    String(u.username||'').toLowerCase()===key
+  );
+
+  if(!stored){
+    db.users.push(clone(user));
+  }else{
+    stored.username=user.username;
+    stored.password=user.password;
+    stored.role=user.role;
+    stored.name=user.name;
   }
 
   saveDB();
- }
 
- if(!user){
-  showLoginError(
-   'Incorrect username or password. Please check your credentials and try again.'
-  );
+  // Create login session.
+  session={
+    userId:user.id,
+    username:user.username,
+    role:user.role,
+    loginAt:Date.now()
+  };
 
-  if(passwordEl){
-   passwordEl.value='';
-   passwordEl.focus();
-  }
+  saveSession();
 
+  currentExam=null;
+  examState=null;
+  violationOverlayOpen=false;
+
+  syncViolationOverlay();
+
+  // Open the correct dashboard.
+  openPortal();
   hideLoading();
 
-  if(loginForm){
-   loginForm.dataset.loggingIn='';
-  }
+  form.dataset.loggingIn='';
 
   return false;
- }
-
- /*
-  * Re-load and verify the account before creating the session.
-  */
- db=loadDB();
-
- const verifiedUser=
-  db.users.find(u=>u.id===user.id) ||
-  db.users.find(
-   u=>
-    String(u.username||'').trim().toLowerCase()===
-    String(user.username||'').trim().toLowerCase()
-  );
-
- if(!verifiedUser){
-  showLoginError(
-   'Unable to create the login session. Please refresh and try again.'
-  );
-
-  hideLoading();
-
-  if(loginForm){
-   loginForm.dataset.loggingIn='';
-  }
-
-  return false;
- }
-
- session={
-  userId:verifiedUser.id,
-  username:verifiedUser.username,
-  role:verifiedUser.role,
-  loginAt:Date.now()
- };
-
- saveSession();
-
- currentExam=null;
- examState=null;
- violationOverlayOpen=false;
-
- syncViolationOverlay();
-
- openPortal();
-
- hideLoading();
-
- if(loginForm){
-  loginForm.dataset.loggingIn='';
- }
-
- return false;
-}
-
-function logout(){
- clearInterval(timer);
- timer=null;
-
- exitFullscreen();
-
- currentExam=null;
- examState=null;
- violationOverlayOpen=false;
-
- session=null;
- saveSession();
-
- document.body.classList.remove('lockdown-active');
-
- const examView=$('#exam-view');
-
- if(examView){
-  examView.classList.remove('lockdown-active');
- }
-
- showView('login');
-
- const form=$('#login-form');
-
- if(form){
-  form.reset();
- }
-
- clearLoginError();
- closeModal();
-}
-
-function initAuthentication(){
- const form=$('#login-form');
-
- if(!form)return;
-
- if(form.dataset.authBound==='1'){
-  return;
- }
-
- form.addEventListener(
-  'submit',
-  handleLogin
- );
-
- form.dataset.authBound='1';
 }
 
 /* =========================
